@@ -1,0 +1,242 @@
+﻿<UserControl x:Class="SmartErpDesktop.Views.ExpensesView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             FlowDirection="RightToLeft">
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="4">
+
+            <TextBlock Text="إدارة المصاريف"
+                       FontSize="27"
+                       FontWeight="Bold"
+                       Foreground="#122038"/>
+
+            <TextBlock Text="تسجيل ومتابعة مصروفات المعرض"
+                       Foreground="#68758A"
+                       Margin="0,5,0,18"/>
+
+            <!-- Summary -->
+            <UniformGrid Columns="3" Margin="0,0,0,16">
+
+                <Border Background="White" CornerRadius="8"
+                        Padding="16" Margin="4">
+                    <StackPanel>
+                        <TextBlock Text="مصروفات اليوم"
+                                   Foreground="#667085"/>
+                        <TextBlock x:Name="TodayTotalText"
+                                   Text="0.00 ج.م"
+                                   FontSize="23"
+                                   FontWeight="Bold"
+                                   Foreground="#1A73E8"
+                                   Margin="0,8,0,0"/>
+                    </StackPanel>
+                </Border>
+
+                <Border Background="White" CornerRadius="8"
+                        Padding="16" Margin="4">
+                    <StackPanel>
+                        <TextBlock Text="مصروفات الشهر"
+                                   Foreground="#667085"/>
+                        <TextBlock x:Name="MonthTotalText"
+                                   Text="0.00 ج.م"
+                                   FontSize="23"
+                                   FontWeight="Bold"
+                                   Foreground="#248A48"
+                                   Margin="0,8,0,0"/>
+                    </StackPanel>
+                </Border>
+
+                <Border Background="White" CornerRadius="8"
+                        Padding="16" Margin="4">
+                    <StackPanel>
+                        <TextBlock Text="عدد المصروفات"
+                                   Foreground="#667085"/>
+                        <TextBlock x:Name="ExpenseCountText"
+                                   Text="0"
+                                   FontSize="23"
+                                   FontWeight="Bold"
+                                   Foreground="#122038"
+                                   Margin="0,8,0,0"/>
+                    </StackPanel>
+                </Border>
+
+            </UniformGrid>
+
+            <!-- New expense form -->
+            <Border Background="White" CornerRadius="8"
+                    Padding="18" Margin="4">
+
+                <StackPanel>
+                    <TextBlock Text="تسجيل مصروف جديد"
+                               FontSize="19"
+                               FontWeight="SemiBold"
+                               Foreground="#122038"
+                               Margin="0,0,0,14"/>
+
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+
+                        <StackPanel Grid.Row="0" Grid.Column="0"
+                                    Margin="5">
+                            <TextBlock Text="تصنيف المصروف"/>
+                            <ComboBox x:Name="CategoryBox"
+                                      IsEditable="True"
+                                      Text="أخرى"
+                                      Margin="0,5,0,0">
+                                <ComboBoxItem Content="شاي ومشروبات"/>
+                                <ComboBoxItem Content="مياه"/>
+                                <ComboBoxItem Content="مواصلات"/>
+                                <ComboBoxItem Content="نظافة"/>
+                                <ComboBoxItem Content="صيانة"/>
+                                <ComboBoxItem Content="عمالة"/>
+                                <ComboBoxItem Content="كهرباء ومرافق"/>
+                                <ComboBoxItem Content="إيجار"/>
+                                <ComboBoxItem Content="أخرى"/>
+                            </ComboBox>
+                        </StackPanel>
+
+                        <StackPanel Grid.Row="0" Grid.Column="1"
+                                    Margin="5">
+                            <TextBlock Text="المبلغ (ج.م)"/>
+                            <TextBox x:Name="AmountBox"
+                                     Margin="0,5,0,0"
+                                     ToolTip="أدخل مبلغًا أكبر من صفر"/>
+                        </StackPanel>
+
+                        <StackPanel Grid.Row="1" Grid.Column="0"
+                                    Margin="5">
+                            <TextBlock Text="طريقة الدفع"/>
+                            <ComboBox x:Name="PaymentMethodBox"
+                                      SelectedIndex="0"
+                                      Margin="0,5,0,0">
+                                <ComboBoxItem Content="نقدي"/>
+                                <ComboBoxItem Content="تحويل بنكي"/>
+                                <ComboBoxItem Content="بطاقة"/>
+                            </ComboBox>
+                        </StackPanel>
+
+                        <StackPanel Grid.Row="1" Grid.Column="1"
+                                    Margin="5">
+                            <TextBlock Text="اسم الموظف"/>
+                            <TextBox x:Name="CreatedByBox"
+                                     Text="موظف تجريبي"
+                                     Margin="0,5,0,0"/>
+                        </StackPanel>
+
+                        <StackPanel Grid.Row="2" Grid.ColumnSpan="2"
+                                    Margin="5">
+                            <TextBlock Text="وصف المصروف"/>
+                            <TextBox x:Name="DescriptionBox"
+                                     Margin="0,5,0,0"
+                                     ToolTip="مثال: شراء شاي وسكر للعمال"/>
+                        </StackPanel>
+
+                        <StackPanel Grid.Row="3" Grid.ColumnSpan="2"
+                                    Margin="5">
+                            <TextBlock Text="ملاحظات (اختياري)"/>
+                            <TextBox x:Name="NotesBox"
+                                     Height="55"
+                                     AcceptsReturn="True"
+                                     TextWrapping="Wrap"
+                                     VerticalScrollBarVisibility="Auto"
+                                     Margin="0,5,0,0"/>
+                        </StackPanel>
+
+                    </Grid>
+
+                    <Button Content="حفظ المصروف"
+                            Click="SaveExpense_Click"
+                            HorizontalAlignment="Right"
+                            Padding="24,10"
+                            Margin="5,12,5,0"/>
+
+                </StackPanel>
+            </Border>
+
+            <!-- Search -->
+            <Border Background="White" CornerRadius="8"
+                    Padding="16" Margin="4">
+
+                <StackPanel>
+                    <TextBlock Text="سجل المصروفات"
+                               FontSize="19"
+                               FontWeight="SemiBold"
+                               Foreground="#122038"/>
+
+                    <DockPanel Margin="0,12,0,12">
+                        <Button Content="مسح البحث"
+                                DockPanel.Dock="Left"
+                                Click="ClearSearch_Click"
+                                Background="#667085"/>
+
+                        <TextBox x:Name="SearchBox"
+                                 ToolTip="ابحث برقم المصروف أو التصنيف أو الوصف"
+                                 VerticalContentAlignment="Center"
+                                 Margin="0,0,5,0"
+                                 MinHeight="34"
+                                 TextChanged="SearchBox_TextChanged"/>
+                    </DockPanel>
+
+                    <DataGrid x:Name="ExpensesGrid"
+                              AutoGenerateColumns="False"
+                              IsReadOnly="True"
+                              CanUserAddRows="False"
+                              CanUserDeleteRows="False"
+                              SelectionMode="Single"
+                              HeadersVisibility="Column"
+                              MinHeight="220"
+                              MaxHeight="420">
+
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="رقم المصروف"
+                                                Binding="{Binding Number}"
+                                                Width="120"/>
+
+                            <DataGridTextColumn Header="التاريخ والوقت"
+                                                Binding="{Binding Date, StringFormat={}{0:yyyy/MM/dd hh:mm tt}}"
+                                                Width="160"/>
+
+                            <DataGridTextColumn Header="التصنيف"
+                                                Binding="{Binding Category}"
+                                                Width="130"/>
+
+                            <DataGridTextColumn Header="الوصف"
+                                                Binding="{Binding Description}"
+                                                Width="*"/>
+
+                            <DataGridTextColumn Header="المبلغ"
+                                                Binding="{Binding Amount, StringFormat={}{0:N2}}"
+                                                Width="110"/>
+
+                            <DataGridTextColumn Header="طريقة الدفع"
+                                                Binding="{Binding PaymentMethod}"
+                                                Width="120"/>
+
+                            <DataGridTextColumn Header="الموظف"
+                                                Binding="{Binding CreatedBy}"
+                                                Width="130"/>
+                        </DataGrid.Columns>
+
+                    </DataGrid>
+
+                    <TextBlock Text="المصروفات المسجلة للعرض فقط. لا يمكن تعديلها أو حذفها من هذه الشاشة."
+                               Foreground="#B7791F"
+                               TextWrapping="Wrap"
+                               Margin="0,10,0,0"/>
+
+                </StackPanel>
+            </Border>
+
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

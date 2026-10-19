@@ -1,0 +1,264 @@
+﻿<UserControl x:Class="SmartErpDesktop.Views.SettingsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             FlowDirection="RightToLeft"
+             Background="#F4F7FB">
+
+    <UserControl.Resources>
+        <SolidColorBrush x:Key="GreenBrush" Color="#168653"/>
+        <SolidColorBrush x:Key="TextBrush" Color="#172B4D"/>
+        <SolidColorBrush x:Key="MutedBrush" Color="#718096"/>
+
+        <Style x:Key="FieldLabel" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Margin" Value="0,0,0,6"/>
+        </Style>
+
+        <Style x:Key="FieldBox" TargetType="TextBox">
+            <Setter Property="Height" Value="40"/>
+            <Setter Property="Padding" Value="10,7"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="BorderBrush" Value="#D9E2EF"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="0,0,0,18"/>
+        </Style>
+
+        <Style x:Key="SectionButton" TargetType="Button">
+            <Setter Property="Height" Value="44"/>
+            <Setter Property="HorizontalContentAlignment" Value="Right"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="#40516B"/>
+            <Setter Property="Padding" Value="14,8"/>
+            <Setter Property="Margin" Value="0,3"/>
+            <Setter Property="FontSize" Value="13"/>
+        </Style>
+    </UserControl.Resources>
+
+    <Grid Margin="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <Grid Grid.Row="0" Margin="0,0,0,22">
+            <StackPanel>
+                <TextBlock Text="إعدادات النظام"
+                           FontSize="27"
+                           FontWeight="Bold"
+                           Foreground="{StaticResource TextBrush}"/>
+                <TextBlock Text="إدارة بيانات المنشأة والطباعة وتفضيلات البرنامج"
+                           Foreground="{StaticResource MutedBrush}"
+                           FontSize="13"
+                           Margin="0,6,0,0"/>
+            </StackPanel>
+        </Grid>
+
+        <!-- Content -->
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="205"/>
+                <ColumnDefinition Width="18"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Internal navigation -->
+            <Border Grid.Column="0"
+                    Background="White"
+                    BorderBrush="#E3EAF3"
+                    BorderThickness="1"
+                    CornerRadius="12"
+                    Padding="12">
+                <StackPanel>
+                    <TextBlock Text="الأقسام"
+                               FontSize="16"
+                               FontWeight="Bold"
+                               Margin="8,5,8,12"
+                               Foreground="{StaticResource TextBrush}"/>
+
+                    <Button Style="{StaticResource SectionButton}"
+                            Content="بيانات المنشأة"
+                            Click="GeneralSection_Click"/>
+                    <Button Style="{StaticResource SectionButton}"
+                            Content="إعدادات الطباعة"
+                            Click="PrintingSection_Click"/>
+                    <Button Style="{StaticResource SectionButton}"
+                            Content="المظهر"
+                            Click="AppearanceSection_Click"/>
+                    <Button Style="{StaticResource SectionButton}"
+                            Content="معلومات النظام"
+                            Click="AboutSection_Click"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Sections -->
+            <Border Grid.Column="2"
+                    Background="White"
+                    BorderBrush="#E3EAF3"
+                    BorderThickness="1"
+                    CornerRadius="12"
+                    Padding="26">
+
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <Grid>
+
+                        <!-- Company -->
+                        <StackPanel x:Name="GeneralSection">
+                            <TextBlock Text="بيانات المنشأة"
+                                       FontSize="21"
+                                       FontWeight="Bold"
+                                       Foreground="{StaticResource TextBrush}"/>
+                            <TextBlock Text="تُستخدم هذه البيانات تلقائيًا في الشاشات والفواتير التي تم ربطها بها."
+                                       TextWrapping="Wrap"
+                                       Foreground="{StaticResource MutedBrush}"
+                                       Margin="0,7,0,24"/>
+
+                            <TextBlock Text="اسم المنشأة *"
+                                       Style="{StaticResource FieldLabel}"/>
+                            <TextBox x:Name="StoreNameBox"
+                                     Style="{StaticResource FieldBox}"/>
+
+                            <TextBlock Text="رقم الهاتف"
+                                       Style="{StaticResource FieldLabel}"/>
+                            <TextBox x:Name="PhoneBox"
+                                     Style="{StaticResource FieldBox}"/>
+
+                            <TextBlock Text="العنوان"
+                                       Style="{StaticResource FieldLabel}"/>
+                            <TextBox x:Name="AddressBox"
+                                     Style="{StaticResource FieldBox}"/>
+
+                            <TextBlock Text="الرقم الضريبي (اختياري)"
+                                       Style="{StaticResource FieldLabel}"/>
+                            <TextBox x:Name="TaxNumberBox"
+                                     Style="{StaticResource FieldBox}"/>
+                        </StackPanel>
+
+                        <!-- Printing -->
+                        <StackPanel x:Name="PrintingSection"
+                                    Visibility="Collapsed">
+                            <TextBlock Text="إعدادات الطباعة"
+                                       FontSize="21"
+                                       FontWeight="Bold"
+                                       Foreground="{StaticResource TextBrush}"/>
+                            <TextBlock Text="احفظ تفضيلات الفواتير والطباعة."
+                                       Foreground="{StaticResource MutedBrush}"
+                                       Margin="0,7,0,24"/>
+
+                            <TextBlock Text="اسم الطابعة (اختياري)"
+                                       Style="{StaticResource FieldLabel}"/>
+                            <TextBox x:Name="PrinterNameBox"
+                                     Style="{StaticResource FieldBox}"/>
+
+                            <TextBlock Text="مقاس الورق"
+                                       Style="{StaticResource FieldLabel}"/>
+                            <ComboBox x:Name="PaperSizeBox"
+                                      Height="40"
+                                      Margin="0,0,0,20"
+                                      SelectedIndex="0">
+                                <ComboBoxItem Content="حراري 80 مم"/>
+                                <ComboBoxItem Content="حراري 58 مم"/>
+                                <ComboBoxItem Content="A4"/>
+                            </ComboBox>
+
+                            <CheckBox x:Name="ShowStoreInfoCheck"
+                                      Content="إظهار بيانات المنشأة على الفاتورة"
+                                      IsChecked="True"
+                                      Margin="0,5,0,16"/>
+                            <CheckBox x:Name="ShowPrintPreviewCheck"
+                                      Content="عرض معاينة قبل الطباعة"
+                                      IsChecked="True"
+                                      Margin="0,5,0,16"/>
+                        </StackPanel>
+
+                        <!-- Appearance -->
+                        <StackPanel x:Name="AppearanceSection"
+                                    Visibility="Collapsed">
+                            <TextBlock Text="المظهر"
+                                       FontSize="21"
+                                       FontWeight="Bold"
+                                       Foreground="{StaticResource TextBrush}"/>
+                            <TextBlock Text="حدد تفضيل المظهر الذي تريد حفظه."
+                                       Foreground="{StaticResource MutedBrush}"
+                                       Margin="0,7,0,24"/>
+
+                            <TextBlock Text="نمط العرض"
+                                       Style="{StaticResource FieldLabel}"/>
+                            <ComboBox x:Name="ThemeBox"
+                                      Height="40"
+                                      SelectedIndex="0">
+                                <ComboBoxItem Content="فاتح"/>
+                                <ComboBoxItem Content="داكن"/>
+                            </ComboBox>
+
+                            <TextBlock Text="ملاحظة: حفظ الاختيار لا يغير ألوان البرنامج تلقائيًا إلا بعد ربطه بنظام الألوان العام."
+                                       TextWrapping="Wrap"
+                                       Foreground="{StaticResource MutedBrush}"
+                                       Margin="0,16,0,0"/>
+                        </StackPanel>
+
+                        <!-- About -->
+                        <StackPanel x:Name="AboutSection"
+                                    Visibility="Collapsed">
+                            <TextBlock Text="معلومات النظام"
+                                       FontSize="21"
+                                       FontWeight="Bold"
+                                       Foreground="{StaticResource TextBrush}"/>
+                            <TextBlock Text="SMART ERP"
+                                       FontSize="25"
+                                       FontWeight="Bold"
+                                       Foreground="{StaticResource GreenBrush}"
+                                       Margin="0,24,0,8"/>
+                            <TextBlock Text="Desktop Edition"
+                                       FontSize="15"
+                                       Foreground="{StaticResource TextBrush}"/>
+                            <TextBlock Text="WPF · C# · .NET 8 · SQLite"
+                                       Margin="0,8,0,18"
+                                       Foreground="{StaticResource MutedBrush}"/>
+                            <TextBlock Text="بيانات الإعدادات تُحفظ محليًا على هذا الجهاز."
+                                       TextWrapping="Wrap"
+                                       Foreground="{StaticResource MutedBrush}"/>
+                        </StackPanel>
+
+                    </Grid>
+                </ScrollViewer>
+            </Border>
+        </Grid>
+
+        <!-- Footer -->
+        <Grid Grid.Row="2" Margin="0,16,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <Button Grid.Column="0"
+                    Content="حفظ الإعدادات"
+                    Click="SaveSettings_Click"
+                    Background="{StaticResource GreenBrush}"
+                    Foreground="White"
+                    FontWeight="Bold"
+                    Padding="26,12"
+                    MinWidth="160"/>
+
+            <TextBlock x:Name="StatusText"
+                       Grid.Column="1"
+                       Text="جاهز"
+                       VerticalAlignment="Center"
+                       Margin="12,0"
+                       Foreground="{StaticResource MutedBrush}"
+                       TextWrapping="Wrap"/>
+
+            <TextBlock Grid.Column="2"
+                       Text="التخزين المحلي: SQLite"
+                       VerticalAlignment="Center"
+                       Foreground="{StaticResource MutedBrush}"
+                       FontSize="12"/>
+        </Grid>
+    </Grid>
+</UserControl>

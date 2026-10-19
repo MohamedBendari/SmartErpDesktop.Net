@@ -1,0 +1,36 @@
+hi 
+Here is an overview of your project's main screens and their code files, based on the navigation and code structure:
+
+
+```
+Views/
+├── MainWindow.xaml / MainWindow.xaml.cs
+│   - Main application window and navigation logic.
+│
+├── DashboardView.xaml / DashboardView.xaml.cs
+│   - Dashboard screen.
+│
+├── QuickSaleView.xaml / QuickSaleView.xaml.cs
+│   - Quick Sale screen (بيع سريع).
+│
+├── ModuleView.xaml / ModuleView.xaml.cs
+│   - Generic module screen used for:
+│     • Invoices (الفواتير)
+│     • Customers (العملاء والتجار)
+│     • Collections (التحصيل والأقساط)
+│     • Products (المنتجات والمخزون)
+│     • Purchases (المشتريات والموردون)
+│     • Stock (الجرد والتسويات)
+│
+├── SimpleInfoView.xaml / SimpleInfoView.xaml.cs
+│   - Used for simple informational screens (e.g., Expenses, Settings).
+│
+└── [Other supporting files...]
+
+```
+
+**Screen mapping:**
+- "Dashboard" → `DashboardView`
+- "QuickSale" → `QuickSaleView`
+- "Invoices", "Customers", "Collections", "Products", "Purchases", "Stock" → `ModuleView` (with different module keys)
+- "Expenses", "Settings" → `SimpleInfoView`
