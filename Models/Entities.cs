@@ -89,6 +89,29 @@ public sealed class Supplier
     public decimal Balance { get; set; }
 }
 
+public sealed class PurchaseLine
+{
+    public string ProductCode { get; set; } = "";
+    public string ProductName { get; set; } = "";
+    public decimal Quantity { get; set; } = 1;
+    public decimal UnitCost { get; set; }
+    public decimal Discount { get; set; }
+    public decimal Total => Math.Max(0, Quantity * UnitCost - Discount);
+}
+
+public sealed class SupplierPayment
+{
+    public string ReceiptNumber { get; set; } = "";
+    public DateTime Date { get; set; } = DateTime.Now;
+    public string SupplierName { get; set; } = "";
+    public string PurchaseNumber { get; set; } = "";
+    public decimal Amount { get; set; }
+    public string Method { get; set; } = "نقدي";
+    public string Note { get; set; } = "";
+    public decimal BalanceBefore { get; set; }
+    public decimal BalanceAfter { get; set; }
+}
+
 public sealed class Purchase
 {
     public string Number { get; set; } = "";
@@ -102,6 +125,10 @@ public sealed class Purchase
     public string Supplier { get; set; } = "";
     public int Lines { get; set; }
     public decimal Total { get; set; }
+    public decimal Paid { get; set; }
+    public decimal Remaining => Math.Max(0, Total - Paid);
+    public bool IsReceived { get; set; }
+    public List<PurchaseLine> Details { get; set; } = new();
     public string Status { get; set; } = "مسودة تجريبية";
 
     public void MarkUpdated()

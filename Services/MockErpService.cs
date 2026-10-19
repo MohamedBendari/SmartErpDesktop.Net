@@ -8,6 +8,7 @@ public sealed class MockErpService
     public List<Payment> Payments { get; } = new();
     public List<Installment> Installments { get; } = new();
     public List<Supplier> Suppliers { get; } = new();
+    public List<SupplierPayment> SupplierPayments { get; } = new();
     public List<Purchase> Purchases { get; } = new();
     public List<StockMovement> Movements { get; } = new();
     public List<Expense> Expenses { get; } = new();
@@ -213,6 +214,7 @@ public sealed class MockErpService
             Payments.Clear(); Payments.AddRange(savedState.Payments);
             Installments.Clear(); Installments.AddRange(savedState.Installments);
             Suppliers.Clear(); Suppliers.AddRange(savedState.Suppliers);
+            SupplierPayments.Clear(); SupplierPayments.AddRange(savedState.SupplierPayments);
             Purchases.Clear(); Purchases.AddRange(savedState.Purchases);
             Movements.Clear(); Movements.AddRange(savedState.Movements);
             Expenses.Clear(); Expenses.AddRange(savedState.Expenses);
@@ -224,6 +226,57 @@ public sealed class MockErpService
         {
             SaveChanges(); // First run only: persist demo seed data once.
         }
+    }
+
+    public Purchase CreatePurchase(string supplierName, IEnumerable<PurchaseLine> sourceLines, decimal paidNow, bool receiveGoods)
+    {
+        var supplier = Suppliers.FirstOrDefault(x => x.Name == supplierName)
+            ?? throw new InvalidOperationException("اختار موردًا مسجلًا أولاً.");
+        var lines = sourceLines.Select(x => new PurchaseLine { ProductCode = x.ProductCode, ProductName = x.ProductName, Quantity = x.Quantity, UnitCost = x.UnitCost, Discount = x.Discount }).ToList();
+        if (lines.Count == 0) throw new InvalidOperationException("أضف صنفًا واحدًا على الأقل للفاتورة.");
+        foreach (var line in lines)
+        {
+            var product = Products.FirstOrDefault(x => x.Code == line.ProductCode) ?? throw new InvalidOperationException($"الصنف {line.ProductName} غير موجود.");
+            if (line.Quantity <= 0 || line.UnitCost < 0 || line.Discount < 0 || line.Discount > line.Quantity * line.UnitCost)
+                throw new InvalidOperationException($"راجع الكمية والتكلفة والخصم للصنف {product.Name}.");
+        }
+        var total = lines.Sum(x => x.Total);
+        if (paidNow < 0 || paidNow > total) throw new InvalidOperationException("المدفوع يجب أن يكون بين صفر وإجمالي الفاتورة.");
+        var number = "PUR-" + (ErpDataStore.MaxSuffix(Purchases.Select(x => x.Number), "PUR-") + 1).ToString("0000");
+        var purchase = new Purchase { Number = number, Date = DateTime.Now, Supplier = supplier.Name, Lines = lines.Count, Details = lines, Total = total, Paid = paidNow, IsReceived = false, Status = "غير مستلمة" };
+        Purchases.Add(purchase);
+        supplier.Balance += total - paidNow;
+        if (paidNow > 0) SupplierPayments.Add(new SupplierPayment { ReceiptNumber = "SP-" + (ErpDataStore.MaxSuffix(SupplierPayments.Select(x => x.ReceiptNumber), "SP-") + 1).ToString("0000"), Date = DateTime.Now, SupplierName = supplier.Name, PurchaseNumber = number, Amount = paidNow, BalanceBefore = supplier.Balance + paidNow - total, BalanceAfter = supplier.Balance, Method = "نقدي", Note = "دفعة عند إنشاء فاتورة الشراء" });
+        if (receiveGoods) ReceivePurchase(purchase, false);
+        SaveChanges();
+        return purchase;
+    }
+
+    public void ReceivePurchase(Purchase purchase) => ReceivePurchase(purchase, true);
+    private void ReceivePurchase(Purchase purchase, bool save)
+    {
+        if (purchase.IsReceived && purchase.Status == "مستلمة") throw new InvalidOperationException("تم استلام هذه الفاتورة من قبل؛ لن يتم تكرار زيادة المخزون.");
+        if (purchase.Details.Count == 0) throw new InvalidOperationException("الفاتورة القديمة لا تحتوي على تفاصيل أصناف.");
+        foreach (var line in purchase.Details)
+        {
+            var product = Products.First(x => x.Code == line.ProductCode);
+            var oldStock = product.Stock;
+            var newStock = oldStock + line.Quantity;
+            product.Cost = newStock > 0 ? ((oldStock * product.Cost) + (line.Total)) / newStock : line.UnitCost;
+            product.Stock = newStock;
+            Movements.Add(new StockMovement { Date = DateTime.Now, ProductCode = product.Code, ProductName = product.Name, Type = "وارد مشتريات", Quantity = line.Quantity, Reason = $"استلام فاتورة {purchase.Number}", User = "النظام" });
+        }
+        purchase.IsReceived = true; purchase.Status = "مستلمة"; purchase.MarkUpdated();
+        if (save) SaveChanges();
+    }
+
+    public SupplierPayment RecordSupplierPayment(string supplierName, decimal amount, string method, string note)
+    {
+        var supplier = Suppliers.FirstOrDefault(x => x.Name == supplierName) ?? throw new InvalidOperationException("المورد غير موجود.");
+        if (amount <= 0 || amount > supplier.Balance) throw new InvalidOperationException("أدخل مبلغًا أكبر من صفر ولا يتجاوز رصيد المورد المستحق.");
+        var before = supplier.Balance; supplier.Balance -= amount;
+        var payment = new SupplierPayment { ReceiptNumber = "SP-" + (ErpDataStore.MaxSuffix(SupplierPayments.Select(x => x.ReceiptNumber), "SP-") + 1).ToString("0000"), Date = DateTime.Now, SupplierName = supplier.Name, Amount = amount, Method = string.IsNullOrWhiteSpace(method) ? "نقدي" : method, Note = note ?? "", BalanceBefore = before, BalanceAfter = supplier.Balance };
+        SupplierPayments.Add(payment); SaveChanges(); return payment;
     }
 
     /// <summary>Persist all operational collections atomically to the shared SQLite database.</summary>

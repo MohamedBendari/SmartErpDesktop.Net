@@ -38,6 +38,11 @@ public partial class ModuleView : UserControl
             "Invoices" => "فتح البيع السريع",
             _ => "إجراء جديد"
         };
+        if (key == "Purchases")
+        {
+            PrimaryActionButton.Content = "فاتورة شراء جديدة";
+            SupplierStatementButton.Visibility = Visibility.Visible;
+        }
         if (key == "Products")
         {
             AddProductButton.Visibility = Visibility.Visible;
@@ -217,7 +222,7 @@ public partial class ModuleView : UserControl
                 الحالة = x.Status
             }).ToList(),
             "Products" => service.Products.Select(p => new { الكود = p.Code, الباركود = p.Barcode, الصنف = p.Name, التصنيف = p.Category, سعر_البيع = p.Price, التكلفة = p.Cost, المتاح = p.Stock, حد_التنبيه = p.MinimumStock, الحالة = p.Stock <= p.MinimumStock ? "مخزون منخفض" : "متاح" }).ToList(),
-            "Purchases" => service.Purchases.Select(p => new { رقم_الشراء = p.Number, التاريخ = p.Date.ToString("yyyy/MM/dd"), المورد = p.Supplier, عدد_السطور = p.Lines, الإجمالي = p.Total, الحالة = p.Status }).ToList(),
+            "Purchases" => service.Purchases.Select(p => new { رقم_الشراء = p.Number, التاريخ = p.Date.ToString("yyyy/MM/dd"), المورد = p.Supplier, عدد_السطور = p.Lines, الإجمالي = p.Total, المدفوع = p.Paid, المتبقي = p.Remaining, الحالة = p.Status }).ToList(),
             "Stock" => service.Movements.Select(m => new { التاريخ = m.Date.ToString("yyyy/MM/dd HH:mm"), الكود = m.ProductCode, الصنف = m.ProductName, نوع_الحركة = m.Type, الكمية = m.Quantity, السبب = m.Reason, المستخدم = m.User }).ToList(),
             _ => new List<object>()
         };
@@ -258,8 +263,21 @@ public partial class ModuleView : UserControl
         FilterBox.Clear();
         LoadData();
     }
+    private void SupplierStatement_Click(object sender, RoutedEventArgs e)
+    {
+        var window = new SupplierStatementWindow(service) { Owner = Window.GetWindow(this) };
+        window.ShowDialog();
+        LoadData();
+    }
+
     private void PrimaryAction_Click(object sender, RoutedEventArgs e)
     {
+        if (module == "Purchases")
+        {
+            var window = new PurchaseEditorWindow(service) { Owner = Window.GetWindow(this) };
+            if (window.ShowDialog() == true) LoadData();
+            return;
+        }
         if (module == "Collections")
         {
             if (DataGridMain.SelectedItem is null)

@@ -36,6 +36,7 @@ internal static class ErpDataStore
         public List<Payment> Payments { get; set; } = new();
         public List<Installment> Installments { get; set; } = new();
         public List<Supplier> Suppliers { get; set; } = new();
+        public List<SupplierPayment> SupplierPayments { get; set; } = new();
         public List<Purchase> Purchases { get; set; } = new();
         public List<StockMovement> Movements { get; set; } = new();
         public List<Expense> Expenses { get; set; } = new();
@@ -58,10 +59,23 @@ internal static class ErpDataStore
                 PurchasesJson TEXT NOT NULL,
                 MovementsJson TEXT NOT NULL,
                 ExpensesJson TEXT NOT NULL,
+                SupplierPaymentsJson TEXT NOT NULL DEFAULT '[]',
                 UpdatedAt TEXT NOT NULL
             );
             """;
         command.ExecuteNonQuery();
+        using var columns = connection.CreateCommand();
+        columns.CommandText = "PRAGMA table_info(ErpOperationalData);";
+        using var reader = columns.ExecuteReader();
+        var hasSupplierPayments = false;
+        while (reader.Read()) if (reader.GetString(1) == "SupplierPaymentsJson") hasSupplierPayments = true;
+        reader.Close();
+        if (!hasSupplierPayments)
+        {
+            using var alter = connection.CreateCommand();
+            alter.CommandText = "ALTER TABLE ErpOperationalData ADD COLUMN SupplierPaymentsJson TEXT NOT NULL DEFAULT '[]';";
+            alter.ExecuteNonQuery();
+        }
     }
 
     internal static bool TryLoad(MockErpService service, out State state)
@@ -74,7 +88,7 @@ internal static class ErpDataStore
         using var command = connection.CreateCommand();
         command.CommandText = """
             SELECT ProductsJson, CustomersJson, InvoicesJson, PaymentsJson,
-                   InstallmentsJson, SuppliersJson, PurchasesJson, MovementsJson, ExpensesJson
+                   InstallmentsJson, SuppliersJson, PurchasesJson, MovementsJson, ExpensesJson, SupplierPaymentsJson
             FROM ErpOperationalData WHERE Id = 1;
             """;
         using var reader = command.ExecuteReader();
@@ -94,7 +108,8 @@ internal static class ErpDataStore
             Suppliers = Deserialize<List<Supplier>>(reader.GetString(5)),
             Purchases = Deserialize<List<Purchase>>(reader.GetString(6)),
             Movements = Deserialize<List<StockMovement>>(reader.GetString(7)),
-            Expenses = Deserialize<List<Expense>>(reader.GetString(8))
+            Expenses = Deserialize<List<Expense>>(reader.GetString(8)),
+            SupplierPayments = Deserialize<List<SupplierPayment>>(reader.GetString(9))
         };
         return true;
     }
@@ -111,9 +126,9 @@ internal static class ErpDataStore
         command.CommandText = """
             INSERT INTO ErpOperationalData
             (Id, SchemaVersion, ProductsJson, CustomersJson, InvoicesJson, PaymentsJson,
-             InstallmentsJson, SuppliersJson, PurchasesJson, MovementsJson, ExpensesJson, UpdatedAt)
+             InstallmentsJson, SuppliersJson, PurchasesJson, MovementsJson, ExpensesJson, SupplierPaymentsJson, UpdatedAt)
             VALUES (1, 1, $products, $customers, $invoices, $payments, $installments,
-                    $suppliers, $purchases, $movements, $expenses, $updatedAt)
+                    $suppliers, $purchases, $movements, $expenses, $supplierPayments, $updatedAt)
             ON CONFLICT(Id) DO UPDATE SET
                 SchemaVersion = excluded.SchemaVersion,
                 ProductsJson = excluded.ProductsJson,
@@ -125,6 +140,7 @@ internal static class ErpDataStore
                 PurchasesJson = excluded.PurchasesJson,
                 MovementsJson = excluded.MovementsJson,
                 ExpensesJson = excluded.ExpensesJson,
+                SupplierPaymentsJson = excluded.SupplierPaymentsJson,
                 UpdatedAt = excluded.UpdatedAt;
             """;
         command.Parameters.AddWithValue("$products", Serialize(service.Products));
@@ -136,6 +152,7 @@ internal static class ErpDataStore
         command.Parameters.AddWithValue("$purchases", Serialize(service.Purchases));
         command.Parameters.AddWithValue("$movements", Serialize(service.Movements));
         command.Parameters.AddWithValue("$expenses", Serialize(service.Expenses));
+        command.Parameters.AddWithValue("$supplierPayments", Serialize(service.SupplierPayments));
         command.Parameters.AddWithValue("$updatedAt", DateTimeOffset.Now.ToString("O"));
         command.ExecuteNonQuery();
         transaction.Commit();

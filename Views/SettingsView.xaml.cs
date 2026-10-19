@@ -4,6 +4,8 @@ using SmartErpDesktop.Services;
 using System;
 using System.Windows;
 using System.Windows.Controls;
+using Microsoft.Win32;
+using System.IO;
 
 namespace SmartErpDesktop.Views;
 
@@ -149,6 +151,58 @@ public partial class SettingsView : UserControl
                 "خطأ في الحفظ",
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
+        }
+    }
+
+
+    private void CreateBackup_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new SaveFileDialog
+        {
+            Title = "حفظ نسخة احتياطية من SMART ERP",
+            Filter = "SQLite Backup (*.db)|*.db|All files (*.*)|*.*",
+            FileName = $"SMART-ERP-Backup-{DateTime.Now:yyyyMMdd-HHmmss}.db",
+            AddExtension = true,
+            DefaultExt = ".db"
+        };
+        if (dialog.ShowDialog() != true) return;
+        try
+        {
+            new BackupService().CreateBackup(dialog.FileName);
+            StatusText.Text = "تم إنشاء النسخة الاحتياطية بنجاح.";
+            MessageBox.Show("تم حفظ نسخة احتياطية كاملة من قاعدة بيانات البرنامج في:\n" + dialog.FileName,
+                "نسخة احتياطية", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show("تعذر إنشاء النسخة الاحتياطية:\n" + ex.Message, "خطأ", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private void RestoreBackup_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new OpenFileDialog
+        {
+            Title = "اختيار نسخة SMART ERP لاستعادتها",
+            Filter = "SQLite Backup (*.db)|*.db|All files (*.*)|*.*",
+            CheckFileExists = true
+        };
+        if (dialog.ShowDialog() != true) return;
+        var confirm = MessageBox.Show(
+            "سيتم استبدال بيانات البرنامج الحالية بالبيانات الموجودة في النسخة المختارة. يُفضّل إنشاء نسخة احتياطية حالية أولًا. هل تريد المتابعة؟",
+            "تأكيد استعادة النسخة", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+        if (confirm != MessageBoxResult.Yes) return;
+        try
+        {
+            // The application should be restarted after restore so in-memory lists reload from SQLite.
+            new BackupService().RestoreBackup(dialog.FileName);
+            StatusText.Text = "تمت الاستعادة. أغلق البرنامج وافتحه مرة أخرى.";
+            MessageBox.Show("تمت استعادة قاعدة البيانات. أغلق SMART ERP وافتحه مرة أخرى حتى تُحمّل البيانات المستعادة.",
+                "تمت الاستعادة", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show("تعذر استعادة النسخة الاحتياطية:\n" + ex.Message, "خطأ", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 

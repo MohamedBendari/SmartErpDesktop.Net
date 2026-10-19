@@ -30,6 +30,7 @@ public partial class MainWindow : Window
             ("Purchases", "⇄  المشتريات والموردون"),
             ("Stock", "▤  الجرد والتسويات"),
             ("Expenses", "−  المصاريف"),
+            ("Reports", "▥  التقارير والأرباح"),
             ("Settings", "⚙  الإعدادات")
         };
 
@@ -41,7 +42,7 @@ public partial class MainWindow : Window
                 Tag = key,
                 HorizontalContentAlignment = HorizontalAlignment.Right,
                 Margin = new Thickness(10, 3, 10, 3),
-                Padding = new Thickness(14, 12,4,4),//I added padding to the left to make the text more aligned with the icons 0,0
+                Padding = new Thickness(14, 12, 4, 4),//I added padding to the left to make the text more aligned with the icons 0,0
                 Background = Brushes.Transparent,
                 Foreground = Brushes.White,
                 FontSize = 14
@@ -66,6 +67,7 @@ public partial class MainWindow : Window
             "Purchases" => new ModuleView("Purchases", vm.Service, Navigate),
             "Stock" => new ModuleView("Stock", vm.Service, Navigate),
             "Expenses" => new ExpensesView(vm.Service),
+            "Reports" => new ReportsView(vm.Service),
             "Settings" => new SettingsView(
    ((App)Application.Current).CompanySettings),
             _ => new SimpleInfoView(

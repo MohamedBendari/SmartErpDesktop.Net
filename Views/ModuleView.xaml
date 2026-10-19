@@ -23,6 +23,7 @@
         </Border>
         <WrapPanel Grid.Row="2" Margin="3">
             <Button x:Name="PrimaryActionButton" Content="إجراء" Click="PrimaryAction_Click"/>
+            <Button x:Name="SupplierStatementButton" Content="كشف حساب / سداد مورد" Click="SupplierStatement_Click" Visibility="Collapsed"/>
             <Button x:Name="AddProductButton" Content="إضافة صنف" Click="AddProduct_Click" Visibility="Collapsed"/>
             <Button x:Name="EditProductButton" Content="تعديل الصنف" Click="EditProduct_Click" Visibility="Collapsed"/>
             <Button x:Name="PriceProductButton" Content="تعديل سعر" Click="PriceProduct_Click" Visibility="Collapsed"/>

@@ -132,6 +132,13 @@
                             <TextBox x:Name="AddressBox"
                                      Style="{StaticResource FieldBox}"/>
 
+                            <TextBlock Text="النسخ الاحتياطي والتشغيل الفعلي" FontSize="20" FontWeight="Bold" Margin="0,20,0,8" Foreground="{StaticResource TextBrush}"/>
+                            <TextBlock Text="احفظ نسخة من قاعدة بيانات النظام أو استعد نسخة سابقة. بعد الاستعادة أغلق البرنامج وافتحه مرة أخرى." TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,10"/>
+                            <WrapPanel Margin="0,0,0,18">
+                                <Button Content="إنشاء نسخة احتياطية" Click="CreateBackup_Click" Padding="16,10" Margin="0,0,8,0" Background="{StaticResource GreenBrush}" Foreground="White"/>
+                                <Button Content="استعادة نسخة احتياطية" Click="RestoreBackup_Click" Padding="16,10"/>
+                            </WrapPanel>
+
                             <TextBlock Text="الرقم الضريبي (اختياري)"
                                        Style="{StaticResource FieldLabel}"/>
                             <TextBox x:Name="TaxNumberBox"
