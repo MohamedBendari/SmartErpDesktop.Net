@@ -4,16 +4,13 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using SmartErpDesktop.Models;
 using SmartErpDesktop.Services;
-
 namespace SmartErpDesktop.Views;
-
 public partial class QuickSaleView : UserControl
 {
     private readonly MockErpService service;
     private readonly Action<string> navigate;
     private readonly List<InvoiceLine> cart = new();
     private bool saved;
-
     public QuickSaleView(MockErpService s, Action<string> n)
     {
         InitializeComponent();
@@ -24,26 +21,21 @@ public partial class QuickSaleView : UserControl
         UpdateTotals();
         ProductSearchBox.Focus();
     }
-
     private void ProductSearch_KeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key == Key.Enter) AddProduct();
     }
-
     private void AddProduct_Click(object sender, RoutedEventArgs e) => AddProduct();
-
     private void AddProduct()
     {
         var query = ProductSearchBox.Text.Trim();
         if (query.Length == 0) return;
-
         var product = service.FindProduct(query);
         if (product is null)
         {
             MessageBox.Show("لم يتم العثور على الصنف. تحقق من الاسم أو الكود أو الباركود.", "بحث الصنف", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
-
         var line = cart.FirstOrDefault(x => x.ProductCode == product.Code);
         if (line is not null)
         {
@@ -61,7 +53,6 @@ public partial class QuickSaleView : UserControl
                 MessageBox.Show("الصنف غير متاح بالمخزن.");
                 return;
             }
-
             cart.Add(new InvoiceLine
             {
                 ProductCode = product.Code,
@@ -70,46 +61,35 @@ public partial class QuickSaleView : UserControl
                 Quantity = 1
             });
         }
-
         saved = false;
         RefreshCart();
         ProductSearchBox.Clear();
         ProductSearchBox.Focus();
     }
-
     private void RefreshCart()
     {
         CartGrid.ItemsSource = null;
         CartGrid.ItemsSource = cart;
         UpdateTotals();
     }
-
-
-
     private decimal Num(TextBox box)
     {
         if (box == null || string.IsNullOrWhiteSpace(box.Text))
             return 0;
-
         if (decimal.TryParse(
             box.Text,
             NumberStyles.Number,
             CultureInfo.CurrentCulture,
             out var value))
             return value;
-
         if (decimal.TryParse(
             box.Text,
             NumberStyles.Number,
             CultureInfo.InvariantCulture,
             out value))
             return value;
-
         return 0;
     }
-
-
-
     private void UpdateTotals()
     {
         if (TotalsText == null ||
@@ -118,19 +98,14 @@ public partial class QuickSaleView : UserControl
         {
             return;
         }
-
         var subtotal = cart.Sum(x => x.Total);
         var discount = Num(InvoiceDiscountBox);
         var total = Math.Max(0, subtotal - discount);
         var paid = Num(PaidBox);
-
         TotalsText.Text =
             $"{total:N2} / {Math.Max(0, total - paid):N2} ج.م";
     }
-
-
     private void Amounts_Changed(object sender, TextChangedEventArgs e) => UpdateTotals();
-
     private void CartGrid_CellEditEnding(object sender, DataGridCellEditEndingEventArgs e)
     {
         Dispatcher.BeginInvoke(new Action(() =>
@@ -148,11 +123,9 @@ public partial class QuickSaleView : UserControl
             }
             catch
             {
-                // Keep the current cart if a cell edit cannot be parsed.
             }
         }));
     }
-
     private void RemoveLine_Click(object sender, RoutedEventArgs e)
     {
         if ((sender as FrameworkElement)?.DataContext is InvoiceLine line)
@@ -161,7 +134,6 @@ public partial class QuickSaleView : UserControl
             RefreshCart();
         }
     }
-
     private void Save_Click(object sender, RoutedEventArgs e)
     {
         if (saved)
@@ -169,13 +141,33 @@ public partial class QuickSaleView : UserControl
             MessageBox.Show("تم حفظ هذه العملية بالفعل. ابدأ فاتورة جديدة لمنع التكرار.");
             return;
         }
-
         try
         {
             var type = (SaleTypeBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "كاش";
+            List<Installment>? schedule = null;
+            var expectedTotal = Math.Max(0, cart.Sum(x => x.Total) - Num(InvoiceDiscountBox));
+            var expectedRemaining = expectedTotal - Num(PaidBox);
+
+            // أدخل جدول الأقساط قبل حفظ الفاتورة حتى لا تُحفظ فاتورة قسط بلا جدول بسبب إلغاء النافذة.
+            if (type == "قسط أفراد" && expectedRemaining > 0)
+            {
+                var scheduleWindow = new InstallmentScheduleWindow(expectedRemaining)
+                {
+                    Owner = Window.GetWindow(this)
+                };
+                if (scheduleWindow.ShowDialog() != true)
+                    return;
+                schedule = scheduleWindow.ResultInstallments;
+            }
+
             var invoice = service.SaveSale(cart, type, CustomerBox.SelectedItem as Customer, Num(PaidBox), Num(InvoiceDiscountBox));
+            if (schedule is not null)
+                service.AddInstallmentSchedule(invoice, schedule);
+
             saved = true;
             var message = $"تم حفظ الفاتورة التجريبية {invoice.Number}\nالإجمالي: {invoice.Total:N2} ج.م\nالمتبقي: {invoice.Remaining:N2} ج.م\nتم تحديث المخزون التجريبي.";
+            if (schedule is not null)
+                message += $"\nعدد الأقساط: {schedule.Count}\nإجمالي جدول الأقساط: {schedule.Sum(x => x.Amount):N2} ج.م";
             MessageBox.Show(message, "نجاح", MessageBoxButton.OK, MessageBoxImage.Information);
             if (MessageBox.Show("هل تريد فتح الفواتير؟", "متابعة", MessageBoxButton.YesNo) == MessageBoxResult.Yes)
                 navigate("Invoices");
@@ -185,7 +177,6 @@ public partial class QuickSaleView : UserControl
             MessageBox.Show(ex.Message, "تعذر حفظ البيع", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }
-
     private void Print_Click(object sender, RoutedEventArgs e)
     {
         if (cart.Count == 0)
@@ -193,12 +184,10 @@ public partial class QuickSaleView : UserControl
             MessageBox.Show("أضف أصنافاً أولاً لمعاينة الفاتورة.");
             return;
         }
-
         var type = (SaleTypeBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "كاش";
         var total = Math.Max(0, cart.Sum(x => x.Total) - Num(InvoiceDiscountBox));
         var lines = string.Join("\n", cart.Select(x => $"{x.ProductName} × {x.Quantity} = {x.Total:N2} ج.م"));
         var text = $"SMART ERP — فاتورة تجريبية\n{DateTime.Now:yyyy/MM/dd HH:mm}\n{lines}\nالنوع: {type}\nالإجمالي: {total:N2} ج.م\nالمدفوع: {Num(PaidBox):N2} ج.م\nالمتبقي: {Math.Max(0, total - Num(PaidBox)):N2} ج.م\n\nمعاينة فقط — لا توجد طابعة مرتبطة.";
-
         var window = new Window
         {
             Title = "معاينة الفاتورة",
