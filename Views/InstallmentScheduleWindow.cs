@@ -14,11 +14,13 @@ public sealed class InstallmentScheduleWindow : Window
     private readonly TextBox amountBox = new();
     private readonly DataGrid scheduleGrid = new();
     private readonly TextBlock totalText = new();
+    private readonly int requestedMonths;
 
     public List<Installment> ResultInstallments { get; private set; } = new();
 
-    public InstallmentScheduleWindow(decimal expectedRemaining)
+    public InstallmentScheduleWindow(decimal expectedRemaining, int months = 0)
     {
+        requestedMonths = months;
         expectedAmount = decimal.Round(expectedRemaining, 2, MidpointRounding.AwayFromZero);
         Title = "جدول أقساط يدوي";
         Width = 760;
@@ -52,6 +54,13 @@ public sealed class InstallmentScheduleWindow : Window
         amountBox.MinWidth = 130;
         var addButton = new Button { Content = "إضافة قسط", Padding = new Thickness(14, 7, 14, 7), Margin = new Thickness(3) };
         addButton.Click += Add_Click;
+        if (requestedMonths > 0)
+        {
+            var generateButton = new Button { Content = $"توليد {requestedMonths} قسطاً شهرياً", Padding = new Thickness(14, 7, 14, 7), Margin = new Thickness(3) };
+            generateButton.Click += (_, _) => GenerateMonthlySchedule();
+            entry.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            Grid.SetColumn(generateButton, 3); entry.Children.Add(generateButton);
+        }
         entry.Children.Add(dueDatePicker);
         Grid.SetColumn(amountBox, 1); entry.Children.Add(amountBox);
         Grid.SetColumn(addButton, 2); entry.Children.Add(addButton);
@@ -84,6 +93,15 @@ public sealed class InstallmentScheduleWindow : Window
         DockPanel.SetDock(buttons, Dock.Left); footer.Children.Add(buttons);
         Grid.SetRow(footer, 3); root.Children.Add(footer);
         Content = root;
+    }
+
+    private void GenerateMonthlySchedule()
+    {
+        items.Clear();
+        var each = decimal.Round(expectedAmount / requestedMonths, 2, MidpointRounding.AwayFromZero);
+        for (int i = 0; i < requestedMonths; i++)
+            items.Add(new Installment { Sequence = i + 1, DueDate = DateTime.Today.AddMonths(i + 1), Amount = i == requestedMonths - 1 ? expectedAmount - each * (requestedMonths - 1) : each });
+        RefreshGrid();
     }
 
     private void Add_Click(object? sender, RoutedEventArgs e)

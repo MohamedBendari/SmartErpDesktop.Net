@@ -53,7 +53,43 @@ public partial class ModuleView : UserControl
             StockAlertsButton.Visibility = Visibility.Visible;
             DataGridMain.SelectionMode = DataGridSelectionMode.Extended;
         }
+        if (key == "Customers")
+        {
+            AddTraderButton.Visibility = EditTraderButton.Visibility = DeleteTraderButton.Visibility = Visibility.Visible;
+        }
         LoadData();
+    }
+
+    private Customer? GetSelectedTrader()
+    {
+        if (DataGridMain.SelectedItem is null) return null;
+        var code = DataGridMain.SelectedItem.GetType().GetProperty("الكود")?.GetValue(DataGridMain.SelectedItem)?.ToString();
+        return service.Customers.FirstOrDefault(c => c.Code == code && c.Type == "تاجر");
+    }
+    private void AddTrader_Click(object sender, RoutedEventArgs e)
+    {
+        var editor = new TraderEditorWindow(service) { Owner = Window.GetWindow(this) };
+        if (editor.ShowDialog() == true) LoadData();
+    }
+    private void EditTrader_Click(object sender, RoutedEventArgs e)
+    {
+        var trader = GetSelectedTrader();
+        if (trader is null) { MessageBox.Show("حدد تاجراً من القائمة."); return; }
+        var editor = new TraderEditorWindow(service, trader) { Owner = Window.GetWindow(this) };
+        if (editor.ShowDialog() == true) LoadData();
+    }
+    private void DeleteTrader_Click(object sender, RoutedEventArgs e)
+    {
+        var trader = GetSelectedTrader();
+        if (trader is null) { MessageBox.Show("حدد تاجراً من القائمة."); return; }
+        if (MessageBox.Show($"تأكيد حذف / أرشفة {trader.Name}؟", "تأكيد", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+        try
+        {
+            bool archived = service.RemoveOrArchiveTrader(trader);
+            LoadData();
+            MessageBox.Show(archived ? "للتاجر معاملات مالية؛ تم أرشفته وإخفاؤه من العمليات الجديدة." : "تم حذف التاجر.", "نجاح", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception ex) { MessageBox.Show(ex.Message, "تعذر حذف التاجر", MessageBoxButton.OK, MessageBoxImage.Warning); }
     }
     private Product? GetSelectedProduct()
     {
@@ -208,7 +244,7 @@ public partial class ModuleView : UserControl
         object data = module switch
         {
             "Invoices" => service.Invoices.Select(i => new { رقم_الفاتورة = i.Number, التاريخ = i.Date.ToString("yyyy/MM/dd HH:mm"), العميل = i.CustomerName, نوع_البيع = i.Type, الإجمالي = i.Total, المدفوع = i.Paid, المتبقي = i.Remaining, الحالة = i.Status }).ToList(),
-            "Customers" => service.Customers.Select(c => new { الكود = c.Code, الاسم = c.Name, الهاتف = c.Phone, العنوان = c.Address, النوع = c.Type, الرصيد = c.Balance }).ToList(),
+            "Customers" => service.Customers.Select(c => new { الكود = c.Code, الاسم = c.Name, الهاتف = c.Phone, العنوان = c.Address, النوع = c.Type, الرصيد = c.Balance, نشط = c.IsActive }).ToList(),
             "Collections" => service.Installments.OrderBy(x => x.DueDate).Select(x => new
             {
                 معرّف_القسط = x.Id,
@@ -475,105 +511,34 @@ public partial class ModuleView : UserControl
                 "اسم المنشأة غير مسجل أو لم يتم حفظه. افتح الإعدادات، أدخل اسم المنشأة، ثم اضغط حفظ.",
                 "بيانات المنشأة", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
-        var document = new FlowDocument
-        {
-            PagePadding = new Thickness(30),
-            ColumnWidth = double.PositiveInfinity,
-            FontFamily = new FontFamily("Arial"),
-            FontSize = 12,
-            FlowDirection = FlowDirection.RightToLeft
-        };
-        void AddParagraph(string text, double size = 12, bool bold = false,
-            TextAlignment alignment = TextAlignment.Right)
-        {
-            document.Blocks.Add(new Paragraph(new Run(text))
-            {
-                FontSize = size,
-                FontWeight = bold ? FontWeights.Bold : FontWeights.Normal,
-                TextAlignment = alignment,
-                Margin = new Thickness(0, 4, 0, 4)
-            });
-        }
-        if (settings.ShowStoreInfo)
-        {
-            AddParagraph(
-                string.IsNullOrWhiteSpace(settings.StoreName)
-                    ? "اسم المنشأة غير محدد"
-                    : settings.StoreName,
-                22, true, TextAlignment.Center);
-            if (!string.IsNullOrWhiteSpace(settings.Phone))
-                AddParagraph("الهاتف: " + settings.Phone, 11, false, TextAlignment.Center);
-            if (!string.IsNullOrWhiteSpace(settings.Address))
-                AddParagraph("العنوان: " + settings.Address, 11, false, TextAlignment.Center);
-            if (!string.IsNullOrWhiteSpace(settings.TaxNumber))
-                AddParagraph("الرقم الضريبي: " + settings.TaxNumber, 11, false, TextAlignment.Center);
-        }
-        AddParagraph(isInvoice ? "فاتورة مبيعات" : "معاينة سجل", 20, true, TextAlignment.Center);
-        if (isInvoice && invoice is not null)
-        {
-            AddParagraph("رقم الفاتورة: " + invoice.Number);
-            AddParagraph("التاريخ: " + invoice.Date.ToString("yyyy/MM/dd HH:mm"));
-            AddParagraph("العميل: " + invoice.CustomerName);
-            AddParagraph("نوع البيع: " + invoice.Type);
-            AddParagraph("تفاصيل الأصناف", 15, true);
-            var table = new Table { CellSpacing = 0 };
-            table.Columns.Add(new TableColumn { Width = new GridLength(3, GridUnitType.Star) });
-            table.Columns.Add(new TableColumn { Width = new GridLength(1.2, GridUnitType.Star) });
-            table.Columns.Add(new TableColumn { Width = new GridLength(1.5, GridUnitType.Star) });
-            table.Columns.Add(new TableColumn { Width = new GridLength(1.3, GridUnitType.Star) });
-            table.Columns.Add(new TableColumn { Width = new GridLength(1.6, GridUnitType.Star) });
-            var rowGroup = new TableRowGroup();
-            table.RowGroups.Add(rowGroup);
-            void AddTableRow(params string[] values)
-            {
-                var row = new TableRow();
-                foreach (string value in values)
-                {
-                    row.Cells.Add(new TableCell(new Paragraph(new Run(value))
-                    {
-                        Margin = new Thickness(3),
-                        TextAlignment = TextAlignment.Center
-                    })
-                    {
-                        BorderBrush = Brushes.Gray,
-                        BorderThickness = new Thickness(0.5),
-                        Padding = new Thickness(3)
-                    });
-                }
-                rowGroup.Rows.Add(row);
-            }
-            AddTableRow("الصنف", "الكمية", "سعر الوحدة", "الخصم", "الإجمالي");
-            foreach (InvoiceLine line in invoice.Lines)
-            {
-                AddTableRow(
-                    line.ProductName,
-                    line.Quantity.ToString("N2"),
-                    line.UnitPrice.ToString("N2") + " ج.م",
-                    line.Discount.ToString("N2") + " ج.م",
-                    line.Total.ToString("N2") + " ج.م");
-            }
-            document.Blocks.Add(table);
-            decimal itemsTotal = invoice.Lines.Sum(line => line.Total);
-            decimal invoiceDiscount = Math.Max(0, itemsTotal - invoice.Total);
-            AddParagraph("إجمالي البنود: " + itemsTotal.ToString("N2") + " ج.م", 12, true);
-            if (invoiceDiscount > 0)
-                AddParagraph("خصم الفاتورة: " + invoiceDiscount.ToString("N2") + " ج.م");
-            AddParagraph("الإجمالي النهائي: " + invoice.Total.ToString("N2") + " ج.م", 15, true);
-            AddParagraph("المدفوع: " + invoice.Paid.ToString("N2") + " ج.م");
-            AddParagraph("المتبقي: " + invoice.Remaining.ToString("N2") + " ج.م");
-            AddParagraph("الحالة: " + invoice.Status);
-        }
-        else
-        {
-            foreach (var property in selected.GetType().GetProperties())
-                AddParagraph(property.Name + ": " + (property.GetValue(selected)?.ToString() ?? "-"));
-        }
-        AddParagraph("شكرًا لتعاملكم معنا", 12, false, TextAlignment.Center);
+        Customer? invoiceCustomer = invoice is null ? null : service.Customers.FirstOrDefault(x =>
+            (!string.IsNullOrWhiteSpace(invoice.CustomerCode) && x.Code.Equals(invoice.CustomerCode, StringComparison.OrdinalIgnoreCase)) ||
+            (string.IsNullOrWhiteSpace(invoice.CustomerCode) && x.Name.Equals(invoice.CustomerName, StringComparison.OrdinalIgnoreCase)));
+        IReadOnlyList<Installment> invoiceInstallments = invoice is null ? Array.Empty<Installment>() : service.GetInstallments(invoice.Number);
+        var document = isInvoice && invoice is not null
+            ? InvoiceReceiptDocument.Create(invoice, invoiceCustomer, settings, invoiceInstallments)
+            : new FlowDocument(new Paragraph(new Run("معاينة السجل"))) { FlowDirection = FlowDirection.RightToLeft };
         void PrintDocument()
         {
             try
             {
                 var dialog = new PrintDialog();
+                try
+                {
+                    if (!string.IsNullOrWhiteSpace(settings.PrinterName))
+                    {
+                        var configuredQueue = new System.Printing.LocalPrintServer().GetPrintQueues()
+                            .FirstOrDefault(q => q.FullName.Equals(settings.PrinterName, StringComparison.OrdinalIgnoreCase));
+                        if (configuredQueue is not null) dialog.PrintQueue = configuredQueue;
+                    }
+                    var ticket = dialog.PrintTicket ?? new System.Printing.PrintTicket();
+                    double paperWidth = settings.PaperSize.Contains("58") ? 219.2 : settings.PaperSize.Equals("A4", StringComparison.OrdinalIgnoreCase) ? 793.7 : 302.4;
+                    double paperHeight = settings.PaperSize.Equals("A4", StringComparison.OrdinalIgnoreCase) ? 1122.5 : 720;
+                    ticket.PageMediaSize = new System.Printing.PageMediaSize(paperWidth, paperHeight);
+                    ticket.PageOrientation = System.Printing.PageOrientation.Portrait;
+                    dialog.PrintTicket = ticket;
+                }
+                catch { /* Keep selected printer defaults if a driver rejects the paper setting. */ }
                 if (dialog.ShowDialog() == true)
                 {
                     IDocumentPaginatorSource printable = document;
@@ -614,7 +579,7 @@ public partial class ModuleView : UserControl
         var window = new Window
         {
             Title = isInvoice ? "معاينة فاتورة المبيعات" : "معاينة السجل",
-            Width = 780,
+            Width = settings.PaperSize.Equals("A4", StringComparison.OrdinalIgnoreCase) ? 850 : 480,
             Height = 760,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             Owner = Window.GetWindow(this),

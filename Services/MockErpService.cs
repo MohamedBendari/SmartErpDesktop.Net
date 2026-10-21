@@ -281,6 +281,30 @@ public sealed class MockErpService
 
     /// <summary>Persist all operational collections atomically to the shared SQLite database.</summary>
     public void SaveChanges() => ErpDataStore.Save(this);
+
+    public void SaveTrader(Customer? trader, string code, string name, string phone, string address)
+    {
+        if (string.IsNullOrWhiteSpace(code) || string.IsNullOrWhiteSpace(name)) throw new InvalidOperationException("الكود والاسم مطلوبان.");
+        if (Customers.Any(x => !ReferenceEquals(x, trader) && x.Code.Equals(code.Trim(), StringComparison.OrdinalIgnoreCase))) throw new InvalidOperationException("الكود مستخدم بالفعل.");
+        if (!string.IsNullOrWhiteSpace(phone) && phone.Any(c => !char.IsDigit(c) && c != '+' && c != '-' && c != ' ')) throw new InvalidOperationException("رقم الهاتف غير صحيح.");
+        if (trader is null)
+        {
+            trader = new Customer { Code = code.Trim(), Type = "تاجر" };
+            Customers.Add(trader);
+        }
+        if (!trader.Type.Equals("تاجر", StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("السجل المحدد ليس تاجراً.");
+        trader.Code = code.Trim(); trader.Name = name.Trim(); trader.Phone = phone.Trim(); trader.Address = address.Trim(); trader.IsActive = true;
+        SaveChanges();
+    }
+
+    public bool RemoveOrArchiveTrader(Customer trader)
+    {
+        if (!trader.Type.Equals("تاجر", StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("لا يمكن حذف سجل عميل من إدارة التجار.");
+        bool hasHistory = Invoices.Any(x => x.CustomerName.Equals(trader.Name, StringComparison.OrdinalIgnoreCase)) || Payments.Any(x => x.CustomerName.Equals(trader.Name, StringComparison.OrdinalIgnoreCase)) || Installments.Any(x => x.CustomerName.Equals(trader.Name, StringComparison.OrdinalIgnoreCase));
+        if (hasHistory) trader.IsActive = false; else Customers.Remove(trader);
+        SaveChanges();
+        return hasHistory;
+    }
     public IReadOnlyList<Product> LowStockProducts => Products
         .Where(p => p.Stock <= p.MinimumStock)
         .OrderBy(p => p.Stock)
@@ -417,7 +441,10 @@ public sealed class MockErpService
         string type,
         Customer? customer,
         decimal paid,
-        decimal discount)
+        decimal discount,
+        decimal discountPercent = 0,
+        int installmentMonths = 0,
+        IEnumerable<Installment>? schedule = null)
     {
         if (lines.Count == 0)
         {
@@ -440,7 +467,12 @@ public sealed class MockErpService
             }
         }
         var subtotal = lines.Sum(line => line.Total);
-        var total = Math.Max(0, subtotal - discount);
+        if (discountPercent < 0 || discountPercent > 100)
+            throw new InvalidOperationException("خصم النسبة يجب أن يكون بين 0 و100%.");
+        if (discount < 0)
+            throw new InvalidOperationException("الخصم لا يمكن أن يكون سالباً.");
+        var percentageDiscount = decimal.Round(subtotal * discountPercent / 100m, 2, MidpointRounding.AwayFromZero);
+        var total = Math.Max(0, subtotal - percentageDiscount - discount);
         if (discount < 0)
         {
             throw new InvalidOperationException(
@@ -456,13 +488,21 @@ public sealed class MockErpService
             throw new InvalidOperationException(
                 "اختر العميل للبيع بالتقسيط أو الآجل.");
         }
+        if (type == "آجل تاجر" && customer?.Type != "تاجر")
+            throw new InvalidOperationException("اختر سجلاً من نوع تاجر للبيع الآجل.");
+        if (type == "قسط أفراد" && customer?.Type != "فرد" && customer?.Type != "تاجر")
+            throw new InvalidOperationException("اختر عميلاً صالحاً للبيع بالتقسيط.");
         var invoice = new Invoice
         {
             Number = $"INV-{++invoiceSequence}",
             Date = DateTime.Now,
             CustomerName = customer?.Name ?? "عميل نقدي",
+            CustomerCode = customer?.Code ?? "",
             Type = type,
             Total = total,
+            DiscountPercent = discountPercent,
+            InstallmentMonths = installmentMonths,
+            InitialPayment = paid,
             Paid = paid,
             Status = total == paid
                 ? "مكتملة"
@@ -478,6 +518,9 @@ public sealed class MockErpService
                 Discount = line.Discount
             }).ToList()
         };
+        var scheduleItems = schedule?.OrderBy(x => x.DueDate).ToList() ?? new List<Installment>();
+        if (schedule is not null && (type != "قسط أفراد" || scheduleItems.Count == 0 || scheduleItems.Any(x => x.Amount <= 0 || x.DueDate == default) || scheduleItems.Sum(x => x.Amount) != invoice.Remaining))
+            throw new InvalidOperationException("جدول الأقساط يجب أن يخص بيع التقسيط وأن يساوي مجموعُه المبلغ المتبقي.");
         foreach (var line in lines)
         {
             var product = Products.First(
@@ -494,6 +537,13 @@ public sealed class MockErpService
             });
         }
         Invoices.Insert(0, invoice);
+        for (int i = 0; i < scheduleItems.Count; i++)
+        {
+            scheduleItems[i].InvoiceNumber = invoice.Number;
+            scheduleItems[i].CustomerName = invoice.CustomerName;
+            scheduleItems[i].Sequence = i + 1;
+            Installments.Add(scheduleItems[i]);
+        }
         if (customer != null)
         {
             customer.Balance += invoice.Remaining;

@@ -16,7 +16,7 @@ public partial class QuickSaleView : UserControl
         InitializeComponent();
         service = s;
         navigate = n;
-        CustomerBox.ItemsSource = service.Customers;
+        CustomerBox.ItemsSource = service.Customers.Where(c => c.IsActive).ToList();
         CartGrid.ItemsSource = cart;
         UpdateTotals();
         ProductSearchBox.Focus();
@@ -94,16 +94,19 @@ public partial class QuickSaleView : UserControl
     {
         if (TotalsText == null ||
             InvoiceDiscountBox == null ||
+            DiscountPercentBox == null ||
             PaidBox == null)
         {
             return;
         }
         var subtotal = cart.Sum(x => x.Total);
         var discount = Num(InvoiceDiscountBox);
-        var total = Math.Max(0, subtotal - discount);
+        var percent = Num(DiscountPercentBox);
+        var percentDiscount = decimal.Round(subtotal * percent / 100m, 2, MidpointRounding.AwayFromZero);
+        var total = Math.Max(0, subtotal - percentDiscount - discount);
         var paid = Num(PaidBox);
         TotalsText.Text =
-            $"{total:N2} / {Math.Max(0, total - paid):N2} ج.م";
+            $"قبل الخصم {subtotal:N2} | خصم {percent:N2}% ({percentDiscount:N2}) | النهائي {total:N2} / {Math.Max(0, total - paid):N2} ج.م";
     }
     private void Amounts_Changed(object sender, TextChangedEventArgs e) => UpdateTotals();
     private void CartGrid_CellEditEnding(object sender, DataGridCellEditEndingEventArgs e)
@@ -143,15 +146,26 @@ public partial class QuickSaleView : UserControl
         }
         try
         {
+            if (!decimal.TryParse(DiscountPercentBox.Text, NumberStyles.Number, CultureInfo.CurrentCulture, out _) && !decimal.TryParse(DiscountPercentBox.Text, NumberStyles.Number, CultureInfo.InvariantCulture, out _))
+                throw new InvalidOperationException("أدخل نسبة خصم رقمية صحيحة.");
+            if (!decimal.TryParse(InvoiceDiscountBox.Text, NumberStyles.Number, CultureInfo.CurrentCulture, out _) && !decimal.TryParse(InvoiceDiscountBox.Text, NumberStyles.Number, CultureInfo.InvariantCulture, out _))
+                throw new InvalidOperationException("أدخل خصماً ثابتاً رقمياً صحيحاً.");
             var type = (SaleTypeBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "كاش";
             List<Installment>? schedule = null;
-            var expectedTotal = Math.Max(0, cart.Sum(x => x.Total) - Num(InvoiceDiscountBox));
+            var subtotal = cart.Sum(x => x.Total);
+            var pct = Num(DiscountPercentBox);
+            if (pct < 0 || pct > 100) throw new InvalidOperationException("خصم النسبة يجب أن يكون بين 0 و100%.");
+            if (Num(InvoiceDiscountBox) < 0) throw new InvalidOperationException("الخصم الثابت لا يمكن أن يكون سالباً.");
+            var expectedTotal = Math.Max(0, subtotal - decimal.Round(subtotal * pct / 100m, 2, MidpointRounding.AwayFromZero) - Num(InvoiceDiscountBox));
             var expectedRemaining = expectedTotal - Num(PaidBox);
+            var months = 0;
+            if (type == "قسط أفراد" && (!int.TryParse(InstallmentMonthsBox.Text, out months) || months < 1 || months > 120))
+                throw new InvalidOperationException("أدخل مدة تقسيط صحيحة من شهر إلى 120 شهراً.");
 
             // أدخل جدول الأقساط قبل حفظ الفاتورة حتى لا تُحفظ فاتورة قسط بلا جدول بسبب إلغاء النافذة.
             if (type == "قسط أفراد" && expectedRemaining > 0)
             {
-                var scheduleWindow = new InstallmentScheduleWindow(expectedRemaining)
+                var scheduleWindow = new InstallmentScheduleWindow(expectedRemaining, months)
                 {
                     Owner = Window.GetWindow(this)
                 };
@@ -160,9 +174,7 @@ public partial class QuickSaleView : UserControl
                 schedule = scheduleWindow.ResultInstallments;
             }
 
-            var invoice = service.SaveSale(cart, type, CustomerBox.SelectedItem as Customer, Num(PaidBox), Num(InvoiceDiscountBox));
-            if (schedule is not null)
-                service.AddInstallmentSchedule(invoice, schedule);
+            var invoice = service.SaveSale(cart, type, CustomerBox.SelectedItem as Customer, Num(PaidBox), Num(InvoiceDiscountBox), pct, months, schedule);
 
             saved = true;
             var message = $"تم حفظ الفاتورة التجريبية {invoice.Number}\nالإجمالي: {invoice.Total:N2} ج.م\nالمتبقي: {invoice.Remaining:N2} ج.م\nتم تحديث المخزون التجريبي.";
@@ -185,9 +197,11 @@ public partial class QuickSaleView : UserControl
             return;
         }
         var type = (SaleTypeBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "كاش";
-        var total = Math.Max(0, cart.Sum(x => x.Total) - Num(InvoiceDiscountBox));
+        var subtotal = cart.Sum(x => x.Total);
+        var total = Math.Max(0, subtotal - decimal.Round(subtotal * Num(DiscountPercentBox) / 100m, 2, MidpointRounding.AwayFromZero) - Num(InvoiceDiscountBox));
         var lines = string.Join("\n", cart.Select(x => $"{x.ProductName} × {x.Quantity} = {x.Total:N2} ج.م"));
-        var text = $"SMART ERP — فاتورة تجريبية\n{DateTime.Now:yyyy/MM/dd HH:mm}\n{lines}\nالنوع: {type}\nالإجمالي: {total:N2} ج.م\nالمدفوع: {Num(PaidBox):N2} ج.م\nالمتبقي: {Math.Max(0, total - Num(PaidBox)):N2} ج.م\n\nمعاينة فقط — لا توجد طابعة مرتبطة.";
+        var percentDiscount = decimal.Round(subtotal * Num(DiscountPercentBox) / 100m, 2, MidpointRounding.AwayFromZero);
+        var text = $"SMART ERP — فاتورة تجريبية\n{DateTime.Now:yyyy/MM/dd HH:mm}\n{lines}\nالنوع: {type}\nالمجموع قبل الخصم: {subtotal:N2} ج.م\nخصم النسبة ({Num(DiscountPercentBox):N2}%): {percentDiscount:N2} ج.م\nالخصم الثابت: {Num(InvoiceDiscountBox):N2} ج.م\nالإجمالي: {total:N2} ج.م\nالمدفوع: {Num(PaidBox):N2} ج.م\nالمتبقي: {Math.Max(0, total - Num(PaidBox)):N2} ج.م\n\nمعاينة فقط — لا توجد طابعة مرتبطة.";
         var window = new Window
         {
             Title = "معاينة الفاتورة",

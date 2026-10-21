@@ -21,6 +21,7 @@ public sealed class Customer
     public string Address { get; set; } = "";
     public decimal Balance { get; set; }
     public string Type { get; set; } = "فرد";
+    public bool IsActive { get; set; } = true;
 }
 
 public sealed class InvoiceLine
@@ -45,8 +46,12 @@ public sealed class Invoice
     public DateTime? UpdatedAt { get; private set; }
 
     public string CustomerName { get; set; } = "عميل نقدي";
+    public string CustomerCode { get; set; } = "";
     public string Type { get; set; } = "كاش";
     public decimal Total { get; set; }
+    public decimal DiscountPercent { get; set; }
+    public int InstallmentMonths { get; set; }
+    public decimal? InitialPayment { get; set; }
     public decimal Paid { get; set; }
     public decimal Remaining => Total - Paid;
     public string Status { get; set; } = "مكتملة";
