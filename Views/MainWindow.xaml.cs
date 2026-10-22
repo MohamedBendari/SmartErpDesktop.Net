@@ -30,7 +30,6 @@ public partial class MainWindow : Window
             ("Purchases", "⇄  المشتريات والموردون"),
             ("Stock", "▤  الجرد والتسويات"),
             ("Expenses", "−  المصاريف"),
-            ("Reports", "▥  التقارير والأرباح"),
             ("Settings", "⚙  الإعدادات")
         };
 
@@ -67,7 +66,6 @@ public partial class MainWindow : Window
             "Purchases" => new ModuleView("Purchases", vm.Service, Navigate),
             "Stock" => new ModuleView("Stock", vm.Service, Navigate),
             "Expenses" => new ExpensesView(vm.Service),
-            "Reports" => new ReportsView(vm.Service),
             "Settings" => new SettingsView(
    ((App)Application.Current).CompanySettings),
             _ => new SimpleInfoView(
