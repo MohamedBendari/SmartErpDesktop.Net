@@ -8,6 +8,7 @@ namespace SmartErpDesktop.Views;
 public partial class MainWindow : Window
 {
     private readonly MainViewModel vm = new();
+    private Button? activeNavigationButton;
 
     public MainWindow()
     {
@@ -44,7 +45,20 @@ public partial class MainWindow : Window
                 Padding = new Thickness(14, 12, 4, 4),//I added padding to the left to make the text more aligned with the icons 0,0
                 Background = Brushes.Transparent,
                 Foreground = Brushes.White,
-                FontSize = 14
+                FontSize = 14,
+                BorderThickness = new Thickness(0),
+                Cursor = System.Windows.Input.Cursors.Hand,
+                HorizontalAlignment = HorizontalAlignment.Stretch
+            };
+            button.MouseEnter += (_, _) =>
+            {
+                if (!ReferenceEquals(button, activeNavigationButton))
+                    button.Background = new SolidColorBrush(Color.FromRgb(48, 63, 82));
+            };
+            button.MouseLeave += (_, _) =>
+            {
+                if (!ReferenceEquals(button, activeNavigationButton))
+                    button.Background = Brushes.Transparent;
             };
             button.Click += (_, _) => Navigate(key);
             NavigationPanel.Children.Add(button);
@@ -54,6 +68,15 @@ public partial class MainWindow : Window
     private void Navigate(string page)
     {
         vm.CurrentPage = page;
+        foreach (var button in NavigationPanel.Children.OfType<Button>())
+        {
+            bool selected = string.Equals(button.Tag?.ToString(), page, StringComparison.OrdinalIgnoreCase);
+            button.FontWeight = selected ? FontWeights.SemiBold : FontWeights.Normal;
+            button.Background = selected
+                ? new SolidColorBrush(Color.FromRgb(30, 94, 145))
+                : Brushes.Transparent;
+            if (selected) activeNavigationButton = button;
+        }
         PageTitleText.Text = vm.PageTitle;
         PageHost.Content = page switch
         {

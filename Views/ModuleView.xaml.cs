@@ -1,4 +1,4 @@
-using System.Collections;
+﻿using System.Collections;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
@@ -14,6 +14,7 @@ public partial class ModuleView : UserControl
     private readonly MockErpService service;
     private readonly Action<string> navigate;
     private IEnumerable source = Array.Empty<object>();
+    private bool showingSuppliers;
     public ModuleView(string key, MockErpService s, Action<string> n)
     {
         InitializeComponent();
@@ -42,6 +43,7 @@ public partial class ModuleView : UserControl
         {
             PrimaryActionButton.Content = "فاتورة شراء جديدة";
             SupplierStatementButton.Visibility = Visibility.Visible;
+            SupplierListButton.Visibility = AddSupplierButton.Visibility = EditSupplierButton.Visibility = DeleteSupplierButton.Visibility = SupplierInstallmentsButton.Visibility = Visibility.Visible;
         }
         if (key == "Products")
         {
@@ -52,6 +54,11 @@ public partial class ModuleView : UserControl
             BarcodeButton.Visibility = Visibility.Visible;
             StockAlertsButton.Visibility = Visibility.Visible;
             DataGridMain.SelectionMode = DataGridSelectionMode.Extended;
+        }
+        if (key == "Invoices")
+        {
+            InvoiceInstallmentsButton.Visibility = Visibility.Visible;
+            FilterBox.ToolTip = "ابحث باسم العميل أو الشركة أو رقم الفاتورة أو نوع البيع";
         }
         if (key == "Customers")
         {
@@ -262,6 +269,8 @@ public partial class ModuleView : UserControl
             "Stock" => service.Movements.Select(m => new { التاريخ = m.Date.ToString("yyyy/MM/dd HH:mm"), الكود = m.ProductCode, الصنف = m.ProductName, نوع_الحركة = m.Type, الكمية = m.Quantity, السبب = m.Reason, المستخدم = m.User }).ToList(),
             _ => new List<object>()
         };
+        if (module == "Purchases" && showingSuppliers)
+            data = service.Suppliers.Where(s => s.IsActive).Select(s => new { Code = s.Code, Name = s.Name, Phone = s.Phone, Address = s.Address, Balance = s.Balance, Active = s.IsActive }).ToList();
         source = (IEnumerable)data;
         DataGridMain.ItemsSource = source;
         if (module == "Collections")
@@ -288,7 +297,7 @@ public partial class ModuleView : UserControl
         var rows = new List<object>();
         foreach (var item in source)
         {
-            if (item?.ToString()?.Contains(query, StringComparison.OrdinalIgnoreCase) == true)
+            if (item is not null && item.GetType().GetProperties().Any(p => (p.GetValue(item)?.ToString() ?? "").Contains(query, StringComparison.OrdinalIgnoreCase)))
                 rows.Add(item);
         }
         DataGridMain.ItemsSource = rows;
@@ -304,6 +313,28 @@ public partial class ModuleView : UserControl
         var window = new SupplierStatementWindow(service) { Owner = Window.GetWindow(this) };
         window.ShowDialog();
         LoadData();
+    }
+
+    private Supplier? GetSelectedSupplier()
+    {
+        var code = DataGridMain.SelectedItem?.GetType().GetProperty("Code")?.GetValue(DataGridMain.SelectedItem)?.ToString();
+        return service.Suppliers.FirstOrDefault(x => x.Code == code);
+    }
+    private void SupplierList_Click(object sender, RoutedEventArgs e) { showingSuppliers = !showingSuppliers; SupplierListButton.Content = showingSuppliers ? "عرض المشتريات" : "قائمة الموردين"; LoadData(); }
+    private void AddSupplier_Click(object sender, RoutedEventArgs e) { var w = new SupplierEditorWindow(service) { Owner = Window.GetWindow(this) }; if (w.ShowDialog() == true) { showingSuppliers = true; LoadData(); } }
+    private void EditSupplier_Click(object sender, RoutedEventArgs e) { var s = GetSelectedSupplier(); if (s is null) { MessageBox.Show("حدد مورداً من القائمة أولاً."); return; } var w = new SupplierEditorWindow(service, s) { Owner = Window.GetWindow(this) }; if (w.ShowDialog() == true) LoadData(); }
+    private void DeleteSupplier_Click(object sender, RoutedEventArgs e) { var s = GetSelectedSupplier(); if (s is null) { MessageBox.Show("حدد مورداً من القائمة أولاً."); return; } if (MessageBox.Show($"حذف أو أرشفة المورد {s.Name}؟", "تأكيد", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return; var archived = service.RemoveOrArchiveSupplier(s); LoadData(); MessageBox.Show(archived ? "للمورد سجل مالي؛ تم أرشفته." : "تم حذف المورد."); }
+    private void SupplierInstallments_Click(object sender, RoutedEventArgs e)
+    {
+        Supplier? supplier; string? purchaseNumber = null;
+        if (showingSuppliers) supplier = GetSelectedSupplier();
+        else
+        {
+            var values = DataGridMain.SelectedItem?.GetType().GetProperties().Select(p => p.GetValue(DataGridMain.SelectedItem)?.ToString()).Where(v => !string.IsNullOrWhiteSpace(v)).ToList() ?? new List<string?>();
+            var purchase = service.Purchases.FirstOrDefault(p => values.Contains(p.Number)); supplier = purchase is null ? null : service.Suppliers.FirstOrDefault(s => s.Name == purchase.Supplier); purchaseNumber = purchase?.Number;
+        }
+        if (supplier is null) { MessageBox.Show(showingSuppliers ? "حدد مورداً من قائمة الموردين أولاً." : "حدد فاتورة شراء أو مورداً أولاً."); return; }
+        new SupplierInstallmentWindow(service, supplier, purchaseNumber) { Owner = Window.GetWindow(this) }.ShowDialog(); LoadData();
     }
 
     private void PrimaryAction_Click(object sender, RoutedEventArgs e)
@@ -465,10 +496,47 @@ public partial class ModuleView : UserControl
             return;
         }
 
+        if (module == "Invoices")
+        {
+            var number = DataGridMain.SelectedItem.GetType().GetProperty("رقم_الفاتورة")?.GetValue(DataGridMain.SelectedItem)?.ToString();
+            var invoice = service.Invoices.FirstOrDefault(i => i.Number == number);
+            if (invoice is null) { MessageBox.Show("تعذر تحديد الفاتورة."); return; }
+            var rows = invoice.Lines.Select(l => $"{l.ProductName} | الكمية: {l.Quantity:N2} | سعر الوحدة: {l.UnitPrice:N2} | الإجمالي: {l.Total:N2}").ToList();
+            rows.Insert(0, $"الفاتورة: {invoice.Number} | التاريخ: {invoice.Date:yyyy/MM/dd HH:mm} | العميل/الشركة: {invoice.CustomerName} | النوع: {invoice.Type}");
+            rows.Add($"الإجمالي: {invoice.Total:N2} | المدفوع: {invoice.Paid:N2} | المتبقي: {invoice.Remaining:N2}");
+            var installments = service.GetInstallments(invoice.Number);
+            if (installments.Count > 0)
+            {
+                rows.Add("--- جدول الأقساط ---");
+                rows.AddRange(installments.Select(x => $"القسط {x.Sequence} | الاستحقاق: {x.DueDate:yyyy/MM/dd} | القيمة: {x.Amount:N2} | المدفوع: {x.PaidAmount:N2} | المتبقي: {x.Remaining:N2} | الحالة: {x.Status}"));
+            }
+            ShowInvoiceDetails(string.Join("\n", rows), invoice.Number);
+            return;
+        }
+
         var details = string.Join("\n", DataGridMain.SelectedItem.GetType().GetProperties()
             .Select(property => $"{property.Name}: {property.GetValue(DataGridMain.SelectedItem)}"));
         MessageBox.Show(details, "تفاصيل السجل");
     }
+    private void InvoiceInstallments_Click(object sender, RoutedEventArgs e)
+    {
+        if (module != "Invoices" || DataGridMain.SelectedItem is null) { MessageBox.Show("حدد فاتورة أولاً."); return; }
+        var number = DataGridMain.SelectedItem.GetType().GetProperty("رقم_الفاتورة")?.GetValue(DataGridMain.SelectedItem)?.ToString();
+        var invoice = service.Invoices.FirstOrDefault(i => i.Number == number);
+        if (invoice is null) { MessageBox.Show("تعذر تحديد الفاتورة."); return; }
+        var items = service.GetInstallments(invoice.Number);
+        if (items.Count == 0) { MessageBox.Show(invoice.Type == "قسط أفراد" ? "لا يوجد جدول أقساط مسجل لهذه الفاتورة." : "الفاتورة ليست بيع تقسيط."); return; }
+        var text = string.Join("\n", items.Select(x => $"القسط {x.Sequence} | تاريخ الاستحقاق: {x.DueDate:yyyy/MM/dd} | القيمة: {x.Amount:N2} | المدفوع: {x.PaidAmount:N2} | المتبقي: {x.Remaining:N2} | الحالة: {x.Status}"));
+        ShowInvoiceDetails(text, "أقساط " + invoice.Number);
+    }
+
+    private void ShowInvoiceDetails(string text, string title)
+    {
+        var window = new Window { Title = title, Width = 760, Height = 520, Owner = Window.GetWindow(this), FlowDirection = FlowDirection.RightToLeft, WindowStartupLocation = WindowStartupLocation.CenterOwner };
+        var box = new TextBox { Text = text, IsReadOnly = true, TextWrapping = TextWrapping.Wrap, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Padding = new Thickness(18), FontSize = 14 };
+        window.Content = box; window.ShowDialog();
+    }
+
     private void Print_Click(object sender, RoutedEventArgs e)
     {
         if (DataGridMain.SelectedItem is null)
@@ -518,6 +586,7 @@ public partial class ModuleView : UserControl
         var document = isInvoice && invoice is not null
             ? InvoiceReceiptDocument.Create(invoice, invoiceCustomer, settings, invoiceInstallments)
             : new FlowDocument(new Paragraph(new Run("معاينة السجل"))) { FlowDirection = FlowDirection.RightToLeft };
+        if (!isInvoice) document = ErpPrintDocument.CreateRecordDocument(HeadingText.Text, selected, settings);
         void PrintDocument()
         {
             try
@@ -589,5 +658,19 @@ public partial class ModuleView : UserControl
         };
         printButton.Click += (_, _) => PrintDocument();
         window.ShowDialog();
+    }
+
+    private FlowDocument CreateSelectedRecordDocument(object selected)
+    {
+        var doc = new FlowDocument { FlowDirection = FlowDirection.RightToLeft, PagePadding = new Thickness(40), ColumnWidth = 700 };
+        doc.Blocks.Add(new Paragraph(new Run(HeadingText.Text)) { FontSize = 22, FontWeight = FontWeights.Bold, TextAlignment = TextAlignment.Center });
+        doc.Blocks.Add(new Paragraph(new Run("SMART ERP")) { FontSize = 13, TextAlignment = TextAlignment.Center });
+        foreach (var property in selected.GetType().GetProperties())
+        {
+            var value = property.GetValue(selected);
+            doc.Blocks.Add(new Paragraph(new Run($"{property.Name.Replace('_', ' ')}: {value ?? "—"}")) { Margin = new Thickness(0, 5, 0, 5), FontSize = 14 });
+        }
+        doc.Blocks.Add(new Paragraph(new Run($"تاريخ الطباعة: {DateTime.Now:yyyy/MM/dd HH:mm}")) { Margin = new Thickness(0, 20, 0, 0), FontSize = 10 });
+        return doc;
     }
 }

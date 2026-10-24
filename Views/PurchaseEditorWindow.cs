@@ -15,6 +15,10 @@ public sealed class PurchaseEditorWindow : Window
     private readonly TextBox cost = new() { Width = 100 };
     private readonly TextBox discount = new() { Text = "0", Width = 90 };
     private readonly TextBox paid = new() { Text = "0", Width = 100 };
+    private readonly TextBox invoiceDiscount = new() { Text = "0", Width = 100 };
+    private readonly TextBox installmentMonths = new() { Text = "0", Width = 80 };
+    private readonly DatePicker firstDueDate = new() { SelectedDate = DateTime.Today.AddMonths(1), Width = 150 };
+    private readonly DatePicker purchaseDate = new() { SelectedDate = DateTime.Today, Width = 150 };
     private readonly CheckBox receive = new() { Content = "استلام البضاعة وتحديث المخزون الآن", IsChecked = true, Margin = new Thickness(4) };
     private readonly DataGrid grid = new() { AutoGenerateColumns = true, CanUserAddRows = false, Height = 230, Margin = new Thickness(4) };
     private readonly List<PurchaseLine> lines = new();
@@ -25,8 +29,8 @@ public sealed class PurchaseEditorWindow : Window
         this.service = service;
         Title = "فاتورة شراء جديدة"; Width = 850; Height = 650; WindowStartupLocation = WindowStartupLocation.CenterOwner;
         FlowDirection = FlowDirection.RightToLeft; Background = System.Windows.Media.Brushes.White;
-        supplier.ItemsSource = service.Suppliers;
-        if (service.Suppliers.Count > 0) supplier.SelectedIndex = 0;
+        supplier.ItemsSource = service.Suppliers.Where(x => x.IsActive).ToList();
+        if (supplier.Items.Count > 0) supplier.SelectedIndex = 0;
         product.ItemsSource = service.Products;
         product.SelectionChanged += (_, _) => { if (product.SelectedItem is Product p) cost.Text = p.Cost.ToString("0.##", CultureInfo.CurrentCulture); };
         var add = new Button { Content = "إضافة الصنف", Padding = new Thickness(12, 6, 12, 6), Margin = new Thickness(4) };
@@ -35,11 +39,11 @@ public sealed class PurchaseEditorWindow : Window
         save.Click += SavePurchase;
         var root = new StackPanel { Margin = new Thickness(14) };
         root.Children.Add(new TextBlock { Text = "فاتورة شراء جديدة", FontSize = 22, FontWeight = FontWeights.Bold, Margin = new Thickness(4) });
-        root.Children.Add(Row("المورد", supplier));
+        root.Children.Add(Row("المورد", supplier, "تاريخ الشراء", purchaseDate));
         root.Children.Add(Row("الصنف", product));
         root.Children.Add(Row("الكمية", quantity, "تكلفة الوحدة", cost, "خصم السطر", discount, add));
         root.Children.Add(grid);
-        root.Children.Add(Row("المدفوع الآن", paid)); root.Children.Add(receive); root.Children.Add(totalText); root.Children.Add(save);
+        root.Children.Add(Row("خصم الفاتورة", invoiceDiscount, "المدفوع الآن", paid, "عدد الأقساط (0 = بدون تقسيط)", installmentMonths, "أول استحقاق", firstDueDate)); root.Children.Add(receive); root.Children.Add(totalText); root.Children.Add(save);
         Content = new ScrollViewer { Content = root, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
         RefreshLines();
     }
@@ -67,7 +71,8 @@ public sealed class PurchaseEditorWindow : Window
     private void RefreshLines()
     {
         grid.ItemsSource = null; grid.ItemsSource = lines.Select(x => new { كود_الصنف = x.ProductCode, الصنف = x.ProductName, الكمية = x.Quantity, تكلفة_الوحدة = x.UnitCost, الخصم = x.Discount, الإجمالي = x.Total }).ToList();
-        totalText.Text = $"إجمالي الفاتورة: {lines.Sum(x => x.Total):N2}";
+        decimal.TryParse(invoiceDiscount.Text, NumberStyles.Number, CultureInfo.CurrentCulture, out var off);
+        totalText.Text = $"إجمالي الفاتورة: {Math.Max(0, lines.Sum(x => x.Total) - off):N2}";
     }
 
     private void SavePurchase(object? sender, RoutedEventArgs e)
@@ -76,8 +81,10 @@ public sealed class PurchaseEditorWindow : Window
         if (!Parse(paid.Text, out var paidAmount)) { MessageBox.Show("قيمة المدفوع غير صحيحة."); return; }
         try
         {
-            var purchase = service.CreatePurchase(s.Name, lines, paidAmount, receive.IsChecked == true);
-            MessageBox.Show($"تم حفظ الفاتورة {purchase.Number}\nالإجمالي: {purchase.Total:N2}\nالمدفوع: {purchase.Paid:N2}\nالمتبقي: {purchase.Remaining:N2}\nحالة الاستلام: {purchase.Status}", "تم الحفظ", MessageBoxButton.OK, MessageBoxImage.Information);
+            if (!int.TryParse(installmentMonths.Text, out var months) || months < 0 || months > 120 || (months > 0 && firstDueDate.SelectedDate is null)) { MessageBox.Show("مدة التقسيط تكون صفراً أو من شهر إلى 120 شهراً، مع تحديد أول استحقاق."); return; }
+            if (!Parse(invoiceDiscount.Text, out var off)) { MessageBox.Show("خصم الفاتورة غير صحيح."); return; }
+            var purchase = service.CreatePurchase(s.Name, lines, paidAmount, receive.IsChecked == true, months, firstDueDate.SelectedDate ?? DateTime.Today.AddMonths(1), purchaseDate.SelectedDate ?? DateTime.Today, off);
+            MessageBox.Show($"تم حفظ الفاتورة {purchase.Number}\nالإجمالي: {purchase.Total:N2}\nالمدفوع: {purchase.Paid:N2}\nالمتبقي: {purchase.Remaining:N2}\nالأقساط: {months}\nحالة الاستلام: {purchase.Status}", "تم الحفظ", MessageBoxButton.OK, MessageBoxImage.Information);
             DialogResult = true;
         }
         catch (Exception ex) { MessageBox.Show(ex.Message, "تعذر حفظ الفاتورة", MessageBoxButton.OK, MessageBoxImage.Warning); }

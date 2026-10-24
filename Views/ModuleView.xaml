@@ -22,8 +22,16 @@
             <DataGrid x:Name="DataGridMain" AutoGenerateColumns="True" SelectionMode="Extended" SelectionUnit="FullRow"/>
         </Border>
         <WrapPanel Grid.Row="2" Margin="3">
-            <Button x:Name="AddTraderButton" Content="إضافة تاجر" Click="AddTrader_Click" Visibility="Collapsed"/><Button x:Name="EditTraderButton" Content="تعديل تاجر" Click="EditTrader_Click" Visibility="Collapsed"/><Button x:Name="DeleteTraderButton" Content="حذف / أرشفة تاجر" Click="DeleteTrader_Click" Visibility="Collapsed"/><Button x:Name="PrimaryActionButton" Content="إجراء" Click="PrimaryAction_Click"/>
+            <Button x:Name="AddTraderButton" Content="إضافة تاجر" Click="AddTrader_Click" Visibility="Collapsed"/>
+            <Button x:Name="EditTraderButton" Content="تعديل تاجر" Click="EditTrader_Click" Visibility="Collapsed"/>
+            <Button x:Name="DeleteTraderButton" Content="حذف / أرشفة تاجر" Click="DeleteTrader_Click" Visibility="Collapsed"/>
+            <Button x:Name="PrimaryActionButton" Content="إجراء" Click="PrimaryAction_Click"/>
             <Button x:Name="SupplierStatementButton" Content="كشف حساب / سداد مورد" Click="SupplierStatement_Click" Visibility="Collapsed"/>
+            <Button x:Name="SupplierListButton" Content="قائمة الموردين" Click="SupplierList_Click" Visibility="Collapsed"/>
+            <Button x:Name="AddSupplierButton" Content="إضافة مورد" Click="AddSupplier_Click" Visibility="Collapsed"/>
+            <Button x:Name="EditSupplierButton" Content="تعديل المورد" Click="EditSupplier_Click" Visibility="Collapsed"/>
+            <Button x:Name="DeleteSupplierButton" Content="حذف / أرشفة المورد" Click="DeleteSupplier_Click" Visibility="Collapsed"/>
+            <Button x:Name="SupplierInstallmentsButton" Content="جدول أقساط المورد / الفاتورة" Click="SupplierInstallments_Click" Visibility="Collapsed"/>
             <Button x:Name="AddProductButton" Content="إضافة صنف" Click="AddProduct_Click" Visibility="Collapsed"/>
             <Button x:Name="EditProductButton" Content="تعديل الصنف" Click="EditProduct_Click" Visibility="Collapsed"/>
             <Button x:Name="PriceProductButton" Content="تعديل سعر" Click="PriceProduct_Click" Visibility="Collapsed"/>
@@ -31,7 +39,8 @@
             <Button x:Name="BarcodeButton" Content="توليد / طباعة باركود" Click="Barcode_Click" Visibility="Collapsed"/>
             <Button x:Name="StockAlertsButton" Content="تنبيهات نقص المخزون" Click="StockAlerts_Click" Visibility="Collapsed"/>
             <Button Content="تفاصيل / معاينة" Background="#45556D" Click="Details_Click"/>
-            <Button Content="طباعة تجريبية" Background="#45556D" Click="Print_Click"/>
+            <Button x:Name="InvoiceInstallmentsButton" Content="جدول أقساط الفاتورة" Background="#0F766E" Click="InvoiceInstallments_Click" Visibility="Collapsed"/>
+            <Button Content="معاينة / طباعة السجل المحدد" Background="#45556D" Click="Print_Click"/>
         </WrapPanel>
     </Grid>
 </UserControl>

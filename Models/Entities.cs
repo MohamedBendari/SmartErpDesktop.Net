@@ -31,6 +31,7 @@ public sealed class InvoiceLine
     public decimal Quantity { get; set; } = 1;
     public decimal UnitPrice { get; set; }
     public decimal Discount { get; set; }
+    public decimal? CostAtSale { get; set; }
 
     public decimal Total => Math.Max(0, Quantity * UnitPrice - Discount);
 }
@@ -92,6 +93,9 @@ public sealed class Supplier
     public string Name { get; set; } = "";
     public string Phone { get; set; } = "";
     public decimal Balance { get; set; }
+    public string Address { get; set; } = "";
+    public string Notes { get; set; } = "";
+    public bool IsActive { get; set; } = true;
 }
 
 public sealed class PurchaseLine
@@ -115,6 +119,21 @@ public sealed class SupplierPayment
     public string Note { get; set; } = "";
     public decimal BalanceBefore { get; set; }
     public decimal BalanceAfter { get; set; }
+    public string InstallmentId { get; set; } = "";
+}
+
+public sealed class SupplierInstallment
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    public string PurchaseNumber { get; set; } = "";
+    public string SupplierName { get; set; } = "";
+    public int Sequence { get; set; }
+    public DateTime DueDate { get; set; }
+    public decimal Amount { get; set; }
+    public decimal PaidAmount { get; set; }
+    public DateTime? PaidDate { get; set; }
+    public decimal Remaining => Math.Max(0, Amount - PaidAmount);
+    public string Status => Remaining <= 0 ? "مسدد" : PaidAmount > 0 ? "مسدد جزئياً" : "غير مدفوع";
 }
 
 public sealed class Purchase
@@ -135,6 +154,10 @@ public sealed class Purchase
     public bool IsReceived { get; set; }
     public List<PurchaseLine> Details { get; set; } = new();
     public string Status { get; set; } = "مسودة تجريبية";
+    public int InstallmentMonths { get; set; }
+    public decimal InitialPayment { get; set; }
+    public DateTime? FirstInstallmentDueDate { get; set; }
+    public decimal InvoiceDiscount { get; set; }
 
     public void MarkUpdated()
     {

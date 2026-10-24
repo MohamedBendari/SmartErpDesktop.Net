@@ -9,6 +9,11 @@ public sealed class MockErpService
     public List<Installment> Installments { get; } = new();
     public List<Supplier> Suppliers { get; } = new();
     public List<SupplierPayment> SupplierPayments { get; } = new();
+    public List<SupplierInstallment> SupplierInstallments { get; } = new();
+    public List<Partner> Partners { get; } = new();
+    public List<PartnerTransaction> PartnerTransactions { get; } = new();
+    public List<PartnerProfitAllocation> PartnerAllocations { get; } = new();
+    public List<PartnerExitSettlement> PartnerSettlements { get; } = new();
     public List<Purchase> Purchases { get; } = new();
     public List<StockMovement> Movements { get; } = new();
     public List<Expense> Expenses { get; } = new();
@@ -215,6 +220,11 @@ public sealed class MockErpService
             Installments.Clear(); Installments.AddRange(savedState.Installments);
             Suppliers.Clear(); Suppliers.AddRange(savedState.Suppliers);
             SupplierPayments.Clear(); SupplierPayments.AddRange(savedState.SupplierPayments);
+            SupplierInstallments.Clear(); SupplierInstallments.AddRange(savedState.SupplierInstallments);
+            Partners.Clear(); Partners.AddRange(savedState.Partners.Partners);
+            PartnerTransactions.Clear(); PartnerTransactions.AddRange(savedState.Partners.Transactions);
+            PartnerAllocations.Clear(); PartnerAllocations.AddRange(savedState.Partners.Allocations);
+            PartnerSettlements.Clear(); PartnerSettlements.AddRange(savedState.Partners.Settlements);
             Purchases.Clear(); Purchases.AddRange(savedState.Purchases);
             Movements.Clear(); Movements.AddRange(savedState.Movements);
             Expenses.Clear(); Expenses.AddRange(savedState.Expenses);
@@ -229,6 +239,12 @@ public sealed class MockErpService
     }
 
     public Purchase CreatePurchase(string supplierName, IEnumerable<PurchaseLine> sourceLines, decimal paidNow, bool receiveGoods)
+        => CreatePurchase(supplierName, sourceLines, paidNow, receiveGoods, 0, DateTime.Today.AddMonths(1), DateTime.Today);
+
+    public Purchase CreatePurchase(string supplierName, IEnumerable<PurchaseLine> sourceLines, decimal paidNow, bool receiveGoods, int installmentMonths, DateTime firstDueDate)
+        => CreatePurchase(supplierName, sourceLines, paidNow, receiveGoods, installmentMonths, firstDueDate, DateTime.Today);
+
+    public Purchase CreatePurchase(string supplierName, IEnumerable<PurchaseLine> sourceLines, decimal paidNow, bool receiveGoods, int installmentMonths, DateTime firstDueDate, DateTime purchaseDate, decimal invoiceDiscount = 0)
     {
         var supplier = Suppliers.FirstOrDefault(x => x.Name == supplierName)
             ?? throw new InvalidOperationException("اختار موردًا مسجلًا أولاً.");
@@ -240,12 +256,26 @@ public sealed class MockErpService
             if (line.Quantity <= 0 || line.UnitCost < 0 || line.Discount < 0 || line.Discount > line.Quantity * line.UnitCost)
                 throw new InvalidOperationException($"راجع الكمية والتكلفة والخصم للصنف {product.Name}.");
         }
-        var total = lines.Sum(x => x.Total);
+        var subtotal = lines.Sum(x => x.Total);
+        if (invoiceDiscount < 0 || invoiceDiscount > subtotal) throw new InvalidOperationException("خصم الفاتورة يجب أن يكون بين صفر وإجمالي الأصناف.");
+        var total = subtotal - invoiceDiscount;
         if (paidNow < 0 || paidNow > total) throw new InvalidOperationException("المدفوع يجب أن يكون بين صفر وإجمالي الفاتورة.");
+        if (installmentMonths < 0 || installmentMonths > 120 || (installmentMonths > 0 && total - paidNow <= 0)) throw new InvalidOperationException("مدة التقسيط أو الرصيد المتبقي غير صحيح.");
         var number = "PUR-" + (ErpDataStore.MaxSuffix(Purchases.Select(x => x.Number), "PUR-") + 1).ToString("0000");
-        var purchase = new Purchase { Number = number, Date = DateTime.Now, Supplier = supplier.Name, Lines = lines.Count, Details = lines, Total = total, Paid = paidNow, IsReceived = false, Status = "غير مستلمة" };
+        var purchase = new Purchase { Number = number, Date = purchaseDate.Date, Supplier = supplier.Name, Lines = lines.Count, Details = lines, Total = total, Paid = paidNow, IsReceived = false, Status = "غير مستلمة" };
+        purchase.InstallmentMonths = installmentMonths;
+        purchase.InitialPayment = paidNow;
+        purchase.FirstInstallmentDueDate = installmentMonths > 0 ? firstDueDate.Date : null;
+        purchase.InvoiceDiscount = invoiceDiscount;
         Purchases.Add(purchase);
         supplier.Balance += total - paidNow;
+        if (installmentMonths > 0)
+        {
+            var financed = total - paidNow;
+            var each = decimal.Round(financed / installmentMonths, 2, MidpointRounding.AwayFromZero);
+            for (var i = 0; i < installmentMonths; i++)
+                SupplierInstallments.Add(new SupplierInstallment { PurchaseNumber = number, SupplierName = supplier.Name, Sequence = i + 1, DueDate = firstDueDate.Date.AddMonths(i), Amount = i == installmentMonths - 1 ? financed - each * (installmentMonths - 1) : each });
+        }
         if (paidNow > 0) SupplierPayments.Add(new SupplierPayment { ReceiptNumber = "SP-" + (ErpDataStore.MaxSuffix(SupplierPayments.Select(x => x.ReceiptNumber), "SP-") + 1).ToString("0000"), Date = DateTime.Now, SupplierName = supplier.Name, PurchaseNumber = number, Amount = paidNow, BalanceBefore = supplier.Balance + paidNow - total, BalanceAfter = supplier.Balance, Method = "نقدي", Note = "دفعة عند إنشاء فاتورة الشراء" });
         if (receiveGoods) ReceivePurchase(purchase, false);
         SaveChanges();
@@ -271,16 +301,201 @@ public sealed class MockErpService
     }
 
     public SupplierPayment RecordSupplierPayment(string supplierName, decimal amount, string method, string note)
+        => RecordSupplierPayment(supplierName, amount, method, note, null);
+
+    public SupplierPayment RecordSupplierPayment(string supplierName, decimal amount, string method, string note, SupplierInstallment? installment)
     {
         var supplier = Suppliers.FirstOrDefault(x => x.Name == supplierName) ?? throw new InvalidOperationException("المورد غير موجود.");
         if (amount <= 0 || amount > supplier.Balance) throw new InvalidOperationException("أدخل مبلغًا أكبر من صفر ولا يتجاوز رصيد المورد المستحق.");
+        if (installment is not null && (!SupplierInstallments.Contains(installment) || installment.SupplierName != supplier.Name || amount > installment.Remaining)) throw new InvalidOperationException("قيمة الدفعة تتجاوز المتبقي على القسط المحدد.");
         var before = supplier.Balance; supplier.Balance -= amount;
-        var payment = new SupplierPayment { ReceiptNumber = "SP-" + (ErpDataStore.MaxSuffix(SupplierPayments.Select(x => x.ReceiptNumber), "SP-") + 1).ToString("0000"), Date = DateTime.Now, SupplierName = supplier.Name, Amount = amount, Method = string.IsNullOrWhiteSpace(method) ? "نقدي" : method, Note = note ?? "", BalanceBefore = before, BalanceAfter = supplier.Balance };
-        SupplierPayments.Add(payment); SaveChanges(); return payment;
+        var payment = new SupplierPayment { ReceiptNumber = "SP-" + (ErpDataStore.MaxSuffix(SupplierPayments.Select(x => x.ReceiptNumber), "SP-") + 1).ToString("0000"), Date = DateTime.Now, SupplierName = supplier.Name, PurchaseNumber = installment?.PurchaseNumber ?? "", InstallmentId = installment?.Id ?? "", Amount = amount, Method = string.IsNullOrWhiteSpace(method) ? "نقدي" : method, Note = note ?? "", BalanceBefore = before, BalanceAfter = supplier.Balance };
+        SupplierPayments.Add(payment);
+        if (installment is not null)
+        {
+            installment.PaidAmount += amount;
+            if (installment.Remaining == 0) installment.PaidDate = DateTime.Now;
+            if (Purchases.FirstOrDefault(p => p.Number == installment.PurchaseNumber) is { } purchase) purchase.Paid += amount;
+        }
+        SaveChanges(); return payment;
+    }
+
+    public void SaveSupplier(Supplier? supplier, string code, string name, string phone, string address, string notes)
+    {
+        if (string.IsNullOrWhiteSpace(code) || string.IsNullOrWhiteSpace(name)) throw new InvalidOperationException("كود المورد والاسم مطلوبان.");
+        if (Suppliers.Any(x => !ReferenceEquals(x, supplier) && x.Code.Equals(code.Trim(), StringComparison.OrdinalIgnoreCase))) throw new InvalidOperationException("كود المورد مستخدم بالفعل.");
+        if (!string.IsNullOrWhiteSpace(phone) && phone.Any(c => !char.IsDigit(c) && c != '+' && c != '-' && c != ' ')) throw new InvalidOperationException("رقم الهاتف غير صحيح.");
+        if (supplier is not null && !supplier.Name.Equals(name.Trim(), StringComparison.Ordinal) && (Purchases.Any(x => x.Supplier == supplier.Name) || SupplierPayments.Any(x => x.SupplierName == supplier.Name) || SupplierInstallments.Any(x => x.SupplierName == supplier.Name))) throw new InvalidOperationException("لا يمكن تغيير اسم المورد بعد وجود حركات مالية مرتبطة به.");
+        supplier ??= new Supplier();
+        if (!Suppliers.Contains(supplier)) Suppliers.Add(supplier);
+        supplier.Code = code.Trim(); supplier.Name = name.Trim(); supplier.Phone = phone.Trim(); supplier.Address = address.Trim(); supplier.Notes = notes.Trim(); supplier.IsActive = true;
+        SaveChanges();
+    }
+
+    public bool RemoveOrArchiveSupplier(Supplier supplier)
+    {
+        bool hasHistory = Purchases.Any(x => x.Supplier == supplier.Name) || SupplierPayments.Any(x => x.SupplierName == supplier.Name) || SupplierInstallments.Any(x => x.SupplierName == supplier.Name) || supplier.Balance != 0;
+        if (hasHistory) supplier.IsActive = false; else Suppliers.Remove(supplier);
+        SaveChanges(); return hasHistory;
     }
 
     /// <summary>Persist all operational collections atomically to the shared SQLite database.</summary>
     public void SaveChanges() => ErpDataStore.Save(this);
+
+    public (decimal NetProfit, decimal Sales, decimal CostOfGoods, decimal Expenses, bool HasCompleteCostSnapshot) CalculateNetProfit(DateTime from, DateTime to)
+    {
+        var invoices = Invoices.Where(x => x.Date >= from && x.Date <= to).ToList();
+        var sales = invoices.Sum(x => x.Total);
+        var lines = invoices.SelectMany(x => x.Lines).ToList();
+        var completeCosts = lines.All(x => x.CostAtSale.HasValue);
+        var cogs = lines.Sum(line => line.Quantity * (line.CostAtSale ?? Products.FirstOrDefault(p => p.Code == line.ProductCode)?.Cost ?? 0));
+        var expenses = Expenses.Where(x => x.Date >= from && x.Date <= to).Sum(x => x.Amount);
+        return (sales - cogs - expenses, sales, cogs, expenses, completeCosts);
+    }
+
+    public void SavePartner(Partner? partner, string code, string fullName, string nationalId, string mobile, string alternatePhone, string address, string email, DateTime joinDate, decimal initialCapital, DateTime contributionDate, decimal profitShare, decimal lossShare, decimal capitalOwnership, bool lossesReduceCapitalAccount, string notes)
+    {
+        code = code.Trim(); fullName = fullName.Trim(); nationalId = nationalId.Trim();
+        if (code.Length == 0 || fullName.Length == 0) throw new InvalidOperationException("كود الشريك والاسم الكامل مطلوبان.");
+        if (Partners.Any(x => !ReferenceEquals(x, partner) && x.Code.Equals(code, StringComparison.OrdinalIgnoreCase))) throw new InvalidOperationException("كود الشريك مستخدم بالفعل.");
+        if (joinDate.Date > DateTime.Today.AddDays(1) || contributionDate.Date < joinDate.Date) throw new InvalidOperationException("راجع تاريخ الانضمام وتاريخ المساهمة.");
+        if (initialCapital < 0 || profitShare < 0 || profitShare > 100 || lossShare < 0 || lossShare > 100 || capitalOwnership < 0 || capitalOwnership > 100) throw new InvalidOperationException("تحقق من قيمة رأس المال ونسب الربح والخسارة (من 0 إلى 100%).");
+        if (!string.IsNullOrWhiteSpace(nationalId) && (nationalId.Length != 14 || nationalId.Any(c => !char.IsDigit(c)))) throw new InvalidOperationException("الرقم القومي المصري إن تم إدخاله يجب أن يتكون من 14 رقماً.");
+        if (!string.IsNullOrWhiteSpace(email) && !email.Contains('@')) throw new InvalidOperationException("البريد الإلكتروني غير صحيح.");
+        if (partner is null)
+        {
+            partner = new Partner { Code = code, FullName = fullName, NationalId = nationalId, Mobile = mobile.Trim(), AlternatePhone = alternatePhone.Trim(), Address = address.Trim(), Email = email.Trim(), JoinDate = joinDate.Date, InitialCapital = initialCapital, InitialContributionDate = contributionDate.Date, ProfitSharePercent = profitShare, LossSharePercent = lossShare, LossesReduceCapitalAccount = lossesReduceCapitalAccount, CapitalOwnershipPercent = capitalOwnership, Notes = notes.Trim() };
+            Partners.Add(partner);
+            if (initialCapital > 0) PartnerTransactions.Add(new PartnerTransaction { PartnerCode = code, Type = "Contribution", Date = contributionDate.Date, Amount = initialCapital, ReferenceNumber = "INITIAL-" + code, Notes = "مساهمة رأس المال الأولية" });
+        }
+        else
+        {
+            if (partner.Code != code && PartnerTransactions.Any(t => t.PartnerCode == partner.Code)) throw new InvalidOperationException("لا يمكن تغيير كود شريك له حركات مالية.");
+            partner.Code = code; partner.FullName = fullName; partner.NationalId = nationalId; partner.Mobile = mobile.Trim(); partner.AlternatePhone = alternatePhone.Trim(); partner.Address = address.Trim(); partner.Email = email.Trim(); partner.JoinDate = joinDate.Date; partner.ProfitSharePercent = profitShare; partner.LossSharePercent = lossShare; partner.LossesReduceCapitalAccount = lossesReduceCapitalAccount; partner.CapitalOwnershipPercent = capitalOwnership; partner.Notes = notes.Trim();
+        }
+        SaveChanges();
+    }
+
+    public PartnerTransaction RecordPartnerCapitalTransaction(string partnerCode, bool contribution, DateTime date, decimal amount, string method, string reference, string notes)
+    {
+        var p = Partners.FirstOrDefault(x => x.Code == partnerCode && x.IsActive) ?? throw new InvalidOperationException("الشريك غير موجود أو غير نشط.");
+        if (amount <= 0 || date.Date < p.JoinDate.Date || p.ExitDate is not null && date.Date > p.ExitDate.Value.Date) throw new InvalidOperationException("تحقق من تاريخ العملية وقيمة موجبة.");
+        var capital = PartnerTransactions.Where(x => x.PartnerCode == partnerCode && x.Type == "Contribution").Sum(x => x.Amount) - PartnerTransactions.Where(x => x.PartnerCode == partnerCode && x.Type == "CapitalReturn").Sum(x => x.Amount);
+        if (!contribution && amount > capital) throw new InvalidOperationException("قيمة رد رأس المال تتجاوز رأس المال المتبقي.");
+        var transaction = new PartnerTransaction { PartnerCode = partnerCode, Type = contribution ? "Contribution" : "CapitalReturn", Date = date.Date, Amount = amount, PaymentMethod = method, ReferenceNumber = reference.Trim(), Notes = notes.Trim() };
+        PartnerTransactions.Add(transaction); SaveChanges(); return transaction;
+    }
+
+    public decimal PartnerCapitalRemaining(string partnerCode) => PartnerTransactions.Where(x => x.PartnerCode == partnerCode && x.Type == "Contribution").Sum(x => x.Amount) - PartnerTransactions.Where(x => x.PartnerCode == partnerCode && x.Type == "CapitalReturn").Sum(x => x.Amount);
+    public decimal PartnerProfitEarned(string partnerCode) => PartnerAllocations.Where(x => x.PartnerCode == partnerCode && x.IsFinalized).Sum(x => x.AllocatedProfit) + PartnerTransactions.Where(x => x.PartnerCode == partnerCode && x.Type == "ProfitAdjustment").Sum(x => x.Amount);
+    public decimal PartnerLossAllocated(string partnerCode) => PartnerAllocations.Where(x => x.PartnerCode == partnerCode && x.IsFinalized).Sum(x => x.AllocatedLoss);
+    public decimal PartnerProfitPaid(string partnerCode) => PartnerTransactions.Where(x => x.PartnerCode == partnerCode && x.Type == "ProfitDistribution").Sum(x => x.Amount);
+
+    public PartnerTransaction RecordPartnerProfitAdjustment(string partnerCode, DateTime date, decimal amount, string reference, string reason)
+    {
+        if (!Partners.Any(x => x.Code == partnerCode && x.IsActive) || amount == 0 || string.IsNullOrWhiteSpace(reason)) throw new InvalidOperationException("اختر شريكاً نشطاً وأدخل تسوية أرباح غير صفرية وسبباً واضحاً.");
+        var transaction = new PartnerTransaction { PartnerCode = partnerCode, Type = "ProfitAdjustment", Date = date.Date, Amount = amount, ReferenceNumber = reference.Trim(), Notes = reason.Trim() };
+        PartnerTransactions.Add(transaction); SaveChanges(); return transaction;
+    }
+
+    public IReadOnlyList<PartnerProfitAllocation> CalculatePartnerMonth(int year, int month)
+    {
+        var start = new DateTime(year, month, 1); var end = start.AddMonths(1).AddTicks(-1);
+        var eligible = Partners.Where(p => p.IsActive && !PartnerSettlements.Any(s => s.PartnerCode == p.Code) && p.JoinDate.Date <= start && (p.ExitDate is null || p.ExitDate.Value.Date >= end.Date)).ToList();
+        if (eligible.Count == 0) throw new InvalidOperationException("لا يوجد شركاء مستحقون عن شهر كامل في هذه الفترة.");
+        var result = CalculateNetProfit(start, end);
+        if (PartnerAllocations.Any(x => x.Year == year && x.Month == month)) return PartnerAllocations.Where(x => x.Year == year && x.Month == month).ToList();
+        var positive = Math.Max(0, result.NetProfit); var loss = Math.Max(0, -result.NetProfit);
+        var allocations = eligible.OrderBy(x => x.Code).Select(p => new PartnerProfitAllocation { PartnerCode = p.Code, Year = year, Month = month, BusinessNetProfit = result.NetProfit, EffectiveSharePercent = p.ProfitSharePercent, EffectiveLossSharePercent = p.LossSharePercent, LossReducesCapitalAccount = p.LossesReduceCapitalAccount, AllocatedProfit = decimal.Round(positive * p.ProfitSharePercent / 100m, 2, MidpointRounding.AwayFromZero), AllocatedLoss = decimal.Round(loss * p.LossSharePercent / 100m, 2, MidpointRounding.AwayFromZero), IsFinalized = false }).ToList();
+        return allocations;
+    }
+
+    public IReadOnlyList<PartnerProfitAllocation> FinalizePartnerMonth(int year, int month)
+    {
+        var start = new DateTime(year, month, 1); var end = start.AddMonths(1).AddTicks(-1);
+        if (!CalculateNetProfit(start, end).HasCompleteCostSnapshot) throw new InvalidOperationException("لا يمكن اعتماد التوزيع: تكلفة البضاعة التاريخية غير مكتملة لهذه الفترة.");
+        if (PartnerAllocations.Any(x => x.Year == year && x.Month == month)) throw new InvalidOperationException("توجد سجلات لهذه الفترة بالفعل؛ لا يمكن إعادة اعتماد الشهر.");
+        var eligible = Partners.Where(p => p.IsActive && !PartnerSettlements.Any(s => s.PartnerCode == p.Code) && p.JoinDate.Date <= start && (p.ExitDate is null || p.ExitDate.Value.Date >= end.Date)).ToList();
+        var businessResult = CalculateNetProfit(start, end).NetProfit;
+        var requiredShare = businessResult > 0 ? eligible.Sum(x => x.ProfitSharePercent) : businessResult < 0 ? eligible.Sum(x => x.LossSharePercent) : 100m;
+        if (businessResult != 0 && requiredShare > 100m) throw new InvalidOperationException(businessResult > 0 ? "مجموع نسب توزيع الأرباح يتجاوز 100%؛ راجع الاتفاق قبل الاعتماد." : "مجموع نسب تحمل الخسائر يتجاوز 100%؛ راجع الاتفاق قبل الاعتماد.");
+        var drafts = CalculatePartnerMonth(year, month).ToList();
+        if (drafts.Any(x => PartnerAllocations.Any(a => a.PartnerCode == x.PartnerCode && a.Year == year && a.Month == month && a.IsFinalized))) throw new InvalidOperationException("يوجد توزيع نهائي مسجل بالفعل لهذه الفترة.");
+        if (drafts.Count > 0 && drafts.Sum(x => x.BusinessNetProfit) != drafts[0].BusinessNetProfit) throw new InvalidOperationException("قاعدة الربح غير متسقة بين الشركاء.");
+        if (drafts.Count > 0 && drafts[0].BusinessNetProfit > 0 && eligible.Sum(x => x.ProfitSharePercent) == 100m) drafts[^1].AllocatedProfit += drafts[0].BusinessNetProfit - drafts.Sum(x => x.AllocatedProfit);
+        if (drafts.Count > 0 && drafts[0].BusinessNetProfit < 0 && eligible.Sum(x => x.LossSharePercent) == 100m) drafts[^1].AllocatedLoss += -drafts[0].BusinessNetProfit - drafts.Sum(x => x.AllocatedLoss);
+        foreach (var allocation in drafts) { allocation.IsFinalized = true; PartnerAllocations.Add(allocation); }
+        SaveChanges(); return drafts;
+    }
+
+    public PartnerTransaction ReversePartnerTransaction(string transactionId, DateTime date, string reason)
+    {
+        var original = PartnerTransactions.FirstOrDefault(x => x.Id == transactionId) ?? throw new InvalidOperationException("الحركة المطلوب تصحيحها غير موجودة.");
+        if (!string.IsNullOrWhiteSpace(original.SettlementId)) throw new InvalidOperationException("حركات تسوية الخروج تُصحح من سجل التسوية نفسه.");
+        if (PartnerTransactions.Any(x => x.ReversesTransactionId == transactionId)) throw new InvalidOperationException("تم عكس هذه الحركة بالفعل.");
+        if (original.Type is not ("Contribution" or "CapitalReturn" or "ProfitDistribution" or "ProfitAdjustment")) throw new InvalidOperationException("نوع الحركة لا يدعم العكس.");
+        if (original.Type == "Contribution" && PartnerCapitalRemaining(original.PartnerCode) < original.Amount) throw new InvalidOperationException("لا يمكن عكس مساهمة سبق رد جزء من رأس مالها.");
+        var reversal = new PartnerTransaction { PartnerCode = original.PartnerCode, Type = original.Type, Date = date.Date, Amount = -original.Amount, PaymentMethod = original.PaymentMethod, ReferenceNumber = "REV-" + original.ReferenceNumber, Notes = reason.Trim(), ReversesTransactionId = original.Id };
+        PartnerTransactions.Add(reversal); SaveChanges(); return reversal;
+    }
+
+    public PartnerTransaction RecordPartnerProfitDistribution(string partnerCode, DateTime date, decimal amount, string method, string reference, string notes)
+    {
+        if (!Partners.Any(x => x.Code == partnerCode && x.IsActive)) throw new InvalidOperationException("صرف الأرباح المباشر متاح للشريك النشط فقط؛ استخدم سداد التسوية للشريك الخارج.");
+        var unpaid = PartnerProfitEarned(partnerCode) - PartnerProfitPaid(partnerCode);
+        if (amount <= 0 || amount > unpaid) throw new InvalidOperationException("المبلغ يجب أن يكون موجباً ولا يتجاوز الأرباح المعتمدة غير المدفوعة.");
+        var transaction = new PartnerTransaction { PartnerCode = partnerCode, Type = "ProfitDistribution", Date = date.Date, Amount = amount, PaymentMethod = method, ReferenceNumber = reference.Trim(), Notes = notes.Trim() };
+        PartnerTransactions.Add(transaction); SaveChanges(); return transaction;
+    }
+
+    public PartnerExitSettlement RecordPartnerSettlementPayment(string settlementId, DateTime date, decimal amount, string method, string reference, string notes)
+    {
+        var settlement = PartnerSettlements.FirstOrDefault(x => x.Id == settlementId) ?? throw new InvalidOperationException("تسوية الشريك غير موجودة.");
+        if (amount <= 0 || amount > settlement.RemainingSettlement) throw new InvalidOperationException("قيمة الدفعة يجب أن تكون موجبة ولا تتجاوز المتبقي من التسوية.");
+        var capitalOutstanding = Math.Max(0, settlement.RemainingCapital - settlement.CapitalPaid);
+        var capitalPayment = Math.Min(capitalOutstanding, amount); var profitPayment = amount - capitalPayment;
+        if (profitPayment > settlement.UnpaidProfit - settlement.ProfitPaid) throw new InvalidOperationException("قيمة الدفعة تتجاوز الأرباح المستحقة بالتسوية.");
+        var partnerCode = settlement.PartnerCode;
+        if (capitalPayment > 0) PartnerTransactions.Add(new PartnerTransaction { PartnerCode = partnerCode, SettlementId = settlement.Id, Type = "CapitalReturn", Date = date.Date, Amount = capitalPayment, PaymentMethod = method, ReferenceNumber = reference, Notes = "دفعة لاحقة من تسوية الخروج - رأس المال" });
+        if (profitPayment > 0) PartnerTransactions.Add(new PartnerTransaction { PartnerCode = partnerCode, SettlementId = settlement.Id, Type = "ProfitDistribution", Date = date.Date, Amount = profitPayment, PaymentMethod = method, ReferenceNumber = reference, Notes = "دفعة لاحقة من تسوية الخروج - الأرباح" });
+        settlement.CapitalPaid += capitalPayment; settlement.ProfitPaid += profitPayment; settlement.AmountPaid += amount; settlement.Notes = string.IsNullOrWhiteSpace(notes) ? settlement.Notes : settlement.Notes + " | " + notes.Trim();
+        SaveChanges(); return settlement;
+    }
+
+    public PartnerExitSettlement PreviewPartnerExit(string partnerCode, DateTime exitDate, decimal approvedDeductions)
+    {
+        var partner = Partners.FirstOrDefault(x => x.Code == partnerCode && x.IsActive) ?? throw new InvalidOperationException("الشريك غير موجود أو خرج بالفعل.");
+        if (exitDate.Date < partner.JoinDate.Date || approvedDeductions < 0) throw new InvalidOperationException("تاريخ الخروج أو الخصومات غير صحيحة.");
+        if (PartnerSettlements.Any(x => x.PartnerCode == partnerCode)) throw new InvalidOperationException("تم تسجيل تسوية خروج لهذا الشريك بالفعل.");
+        var contributed = PartnerTransactions.Where(x => x.PartnerCode == partnerCode && x.Type == "Contribution" && x.Date.Date <= exitDate.Date).Sum(x => x.Amount);
+        var capitalReturned = PartnerTransactions.Where(x => x.PartnerCode == partnerCode && x.Type == "CapitalReturn" && x.Date.Date <= exitDate.Date).Sum(x => x.Amount);
+        var capital = contributed - capitalReturned;
+        var earnedByExit = PartnerAllocations.Where(x => x.PartnerCode == partnerCode && x.IsFinalized && new DateTime(x.Year, x.Month, 1).AddMonths(1).AddDays(-1) <= exitDate.Date).Sum(x => x.AllocatedProfit)
+            + PartnerTransactions.Where(x => x.PartnerCode == partnerCode && x.Type == "ProfitAdjustment" && x.Date <= exitDate.Date).Sum(x => x.Amount);
+        var paidByExit = PartnerTransactions.Where(x => x.PartnerCode == partnerCode && x.Type == "ProfitDistribution" && x.Date <= exitDate.Date).Sum(x => x.Amount);
+        var unpaidProfit = earnedByExit - paidByExit;
+        var lossAllocationsByExit = PartnerAllocations.Where(x => x.PartnerCode == partnerCode && x.IsFinalized && new DateTime(x.Year, x.Month, 1).AddMonths(1).AddDays(-1) <= exitDate.Date).ToList();
+        var lossesByExit = lossAllocationsByExit.Sum(x => x.AllocatedLoss);
+        var lossOffset = Math.Min(capital, lossAllocationsByExit.Where(x => x.LossReducesCapitalAccount).Sum(x => x.AllocatedLoss));
+        var settlementCapital = Math.Max(0, capital - lossOffset);
+        var proposed = Math.Max(0, settlementCapital + unpaidProfit - approvedDeductions);
+        return new PartnerExitSettlement { PartnerCode = partnerCode, ProposedExitDate = exitDate.Date, RemainingCapital = settlementCapital, TotalCapitalContributed = contributed, CapitalReturnedPreviously = capitalReturned, AccumulatedProfits = earnedByExit, AccumulatedLosses = lossesByExit, ProfitAlreadyPaid = paidByExit, CapitalLossOffset = lossOffset, UnpaidProfit = unpaidProfit, ApprovedDeductions = approvedDeductions, ProposedTotal = proposed };
+    }
+
+    public PartnerExitSettlement ConfirmPartnerExit(string partnerCode, DateTime exitDate, decimal deductions, decimal amountPaid, string method, string reference, string notes)
+    {
+        var settlement = PreviewPartnerExit(partnerCode, exitDate, deductions);
+        if (amountPaid < 0 || amountPaid > settlement.ProposedTotal) throw new InvalidOperationException("المبلغ المدفوع يجب أن يكون بين صفر وإجمالي التسوية المقترحة.");
+        settlement.AmountPaid = amountPaid;
+        settlement.CapitalPaid = Math.Min(amountPaid, settlement.RemainingCapital);
+        settlement.ProfitPaid = Math.Max(0, amountPaid - settlement.CapitalPaid);
+        settlement.ReferenceNumber = reference.Trim(); settlement.Notes = notes.Trim();
+        if (settlement.CapitalPaid > 0) PartnerTransactions.Add(new PartnerTransaction { PartnerCode = partnerCode, SettlementId = settlement.Id, Type = "CapitalReturn", Date = exitDate.Date, Amount = settlement.CapitalPaid, PaymentMethod = method, ReferenceNumber = reference, Notes = "جزء رأس المال المدفوع عند الخروج" });
+        if (settlement.ProfitPaid > 0) PartnerTransactions.Add(new PartnerTransaction { PartnerCode = partnerCode, SettlementId = settlement.Id, Type = "ProfitDistribution", Date = exitDate.Date, Amount = settlement.ProfitPaid, PaymentMethod = method, ReferenceNumber = reference, Notes = "جزء الأرباح المدفوع عند الخروج" });
+        PartnerSettlements.Add(settlement);
+        var partner = Partners.First(x => x.Code == partnerCode); partner.IsActive = false; partner.ExitDate = exitDate.Date;
+        SaveChanges(); return settlement;
+    }
 
     public void SaveTrader(Customer? trader, string code, string name, string phone, string address)
     {
@@ -314,7 +529,7 @@ public sealed class MockErpService
     {
         ArgumentNullException.ThrowIfNull(product);
         ValidateProduct(product, null);
-        product.Code = product.Code.Trim();
+        product.Code = NormalizeProductCode(product.Code);
         product.Barcode = product.Barcode.Trim();
         product.Name = product.Name.Trim();
         product.Category = product.Category.Trim();
@@ -347,7 +562,7 @@ public sealed class MockErpService
             l.ProductCode.Equals(current.Code, StringComparison.OrdinalIgnoreCase)))
             throw new InvalidOperationException("لا يمكن تغيير كود صنف مرتبط بفواتير سابقة؛ لتجنب كسر سجل المبيعات.");
 
-        current.Code = updated.Code.Trim();
+        current.Code = NormalizeProductCode(updated.Code);
         current.Barcode = updated.Barcode.Trim();
         current.Name = updated.Name.Trim();
         current.Category = updated.Category.Trim();
@@ -357,8 +572,12 @@ public sealed class MockErpService
         SaveChanges();
     }
 
+    private static string NormalizeProductCode(string? code) =>
+        (code ?? string.Empty).Normalize(System.Text.NormalizationForm.FormKC).Trim();
+
     private void ValidateProduct(Product product, Product? current)
     {
+        product.Code = NormalizeProductCode(product.Code);
         if (string.IsNullOrWhiteSpace(product.Code))
             throw new InvalidOperationException("كود الصنف مطلوب.");
         if (string.IsNullOrWhiteSpace(product.Name))
@@ -373,7 +592,7 @@ public sealed class MockErpService
             throw new InvalidOperationException("رصيد المخزون لا يمكن أن يكون بالسالب.");
 
         bool duplicateCode = Products.Any(p => !ReferenceEquals(p, current) &&
-            p.Code.Equals(product.Code.Trim(), StringComparison.OrdinalIgnoreCase));
+            NormalizeProductCode(p.Code).Equals(NormalizeProductCode(product.Code), StringComparison.OrdinalIgnoreCase));
         if (duplicateCode)
             throw new InvalidOperationException("كود الصنف مستخدم بالفعل.");
         bool duplicateBarcode = Products.Any(p => !ReferenceEquals(p, current) &&
@@ -515,7 +734,8 @@ public sealed class MockErpService
                 ProductName = line.ProductName,
                 Quantity = line.Quantity,
                 UnitPrice = line.UnitPrice,
-                Discount = line.Discount
+                Discount = line.Discount,
+                CostAtSale = Products.FirstOrDefault(p => p.Code == line.ProductCode)?.Cost
             }).ToList()
         };
         var scheduleItems = schedule?.OrderBy(x => x.DueDate).ToList() ?? new List<Installment>();

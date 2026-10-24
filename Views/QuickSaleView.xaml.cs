@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -92,7 +92,7 @@ public partial class QuickSaleView : UserControl
     }
     private void UpdateTotals()
     {
-        if (TotalsText == null ||
+        if (TotalsText == null || FinalTotalText == null ||
             InvoiceDiscountBox == null ||
             DiscountPercentBox == null ||
             PaidBox == null)
@@ -105,8 +105,8 @@ public partial class QuickSaleView : UserControl
         var percentDiscount = decimal.Round(subtotal * percent / 100m, 2, MidpointRounding.AwayFromZero);
         var total = Math.Max(0, subtotal - percentDiscount - discount);
         var paid = Num(PaidBox);
-        TotalsText.Text =
-            $"قبل الخصم {subtotal:N2} | خصم {percent:N2}% ({percentDiscount:N2}) | النهائي {total:N2} / {Math.Max(0, total - paid):N2} ج.م";
+        FinalTotalText.Text = $"{total:N2} ج.م";
+        TotalsText.Text = $"قبل الخصم: {subtotal:N2} | الخصم: {(percentDiscount + discount):N2} | المدفوع: {paid:N2} | المتبقي: {Math.Max(0, total - paid):N2} ج.م";
     }
     private void Amounts_Changed(object sender, TextChangedEventArgs e) => UpdateTotals();
     private void CartGrid_CellEditEnding(object sender, DataGridCellEditEndingEventArgs e)
@@ -197,27 +197,20 @@ public partial class QuickSaleView : UserControl
             return;
         }
         var type = (SaleTypeBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "كاش";
-        var subtotal = cart.Sum(x => x.Total);
-        var total = Math.Max(0, subtotal - decimal.Round(subtotal * Num(DiscountPercentBox) / 100m, 2, MidpointRounding.AwayFromZero) - Num(InvoiceDiscountBox));
-        var lines = string.Join("\n", cart.Select(x => $"{x.ProductName} × {x.Quantity} = {x.Total:N2} ج.م"));
-        var percentDiscount = decimal.Round(subtotal * Num(DiscountPercentBox) / 100m, 2, MidpointRounding.AwayFromZero);
-        var text = $"SMART ERP — فاتورة تجريبية\n{DateTime.Now:yyyy/MM/dd HH:mm}\n{lines}\nالنوع: {type}\nالمجموع قبل الخصم: {subtotal:N2} ج.م\nخصم النسبة ({Num(DiscountPercentBox):N2}%): {percentDiscount:N2} ج.م\nالخصم الثابت: {Num(InvoiceDiscountBox):N2} ج.م\nالإجمالي: {total:N2} ج.م\nالمدفوع: {Num(PaidBox):N2} ج.م\nالمتبقي: {Math.Max(0, total - Num(PaidBox)):N2} ج.م\n\nمعاينة فقط — لا توجد طابعة مرتبطة.";
-        var window = new Window
-        {
-            Title = "معاينة الفاتورة",
-            Width = 500,
-            Height = 600,
-            FlowDirection = FlowDirection.RightToLeft,
-            Content = new TextBox
-            {
-                Text = text,
-                IsReadOnly = true,
-                TextWrapping = TextWrapping.Wrap,
-                Padding = new Thickness(24),
-                FontSize = 16,
-                VerticalScrollBarVisibility = ScrollBarVisibility.Auto
-            }
-        };
-        window.ShowDialog();
+        SmartErpDesktop.Models.CompanySettings printSettings;
+        try { printSettings = ((App)Application.Current).CompanySettings.GetSettings(); }
+        catch { printSettings = new SmartErpDesktop.Models.CompanySettings(); }
+        var doc = ErpPrintDocument.CreatePreviewInvoice(
+            cart,
+            type,
+            CustomerBox.SelectedItem as SmartErpDesktop.Models.Customer,
+            Num(DiscountPercentBox),
+            Num(InvoiceDiscountBox),
+            Num(PaidBox),
+            printSettings);
+        ErpPrintDocument.CreatePreviewWindow(
+            doc, "معاينة فاتورة البيع", "معاينة فاتورة بيع",
+            printSettings, Window.GetWindow(this))
+            .ShowDialog();
     }
 }
