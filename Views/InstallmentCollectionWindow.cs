@@ -97,7 +97,7 @@ public sealed class InstallmentCollectionWindow : Window
         }
         catch (Exception ex)
         {
-            MessageBox.Show(ex.Message, "تعذر تسجيل التحصيل", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(ArabicUi.ErrorMessage(ex, "تعذر تسجيل تحصيل القسط. تحقق من البيانات وحاول مرة أخرى."), "تعذر تسجيل التحصيل", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }
 }

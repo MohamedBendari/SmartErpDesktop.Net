@@ -24,8 +24,19 @@ public sealed class Customer
     public bool IsActive { get; set; } = true;
 }
 
+public sealed class Representative
+{
+    public string Code { get; set; } = "";
+    public string Name { get; set; } = "";
+    public string Phone { get; set; } = "";
+    public string Address { get; set; } = "";
+    public string Notes { get; set; } = "";
+    public bool IsActive { get; set; } = true;
+}
+
 public sealed class InvoiceLine
 {
+    public string Id { get; set; } = Guid.NewGuid().ToString("N");
     public string ProductCode { get; set; } = "";
     public string ProductName { get; set; } = "";
     public decimal Quantity { get; set; } = 1;
@@ -48,6 +59,8 @@ public sealed class Invoice
 
     public string CustomerName { get; set; } = "عميل نقدي";
     public string CustomerCode { get; set; } = "";
+    public string RepresentativeCode { get; set; } = "";
+    public string RepresentativeName { get; set; } = "";
     public string Type { get; set; } = "كاش";
     public decimal Total { get; set; }
     public decimal DiscountPercent { get; set; }
@@ -67,6 +80,8 @@ public sealed class Invoice
 public sealed class Payment
 {
     public string ReceiptNumber { get; set; } = "";
+    public PaymentSourceType SourceType { get; set; } = PaymentSourceType.CustomerCollection;
+    public string SourceId { get; set; } = "";
 
     // تاريخ إنشاء إيصال التحصيل.
     public DateTime Date { get; init; } = DateTime.Now;
@@ -80,11 +95,27 @@ public sealed class Payment
     public decimal BalanceBefore { get; set; }
     public decimal BalanceAfter { get; set; }
     public string Note { get; set; } = "";
+    public List<PaymentAllocation> Allocations { get; set; } = new();
+    public decimal UnallocatedAmount => Math.Max(0, Amount - Allocations.Sum(x => x.Amount));
 
     public void MarkUpdated()
     {
         UpdatedAt = DateTime.Now;
     }
+}
+
+public enum PaymentSourceType
+{
+    CustomerCollection = 0,
+    InvoiceInitialPayment = 1
+}
+
+/// <summary>Part of a customer payment applied to one sales invoice.</summary>
+public sealed class PaymentAllocation
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    public string InvoiceNumber { get; set; } = "";
+    public decimal Amount { get; set; }
 }
 
 public sealed class Supplier

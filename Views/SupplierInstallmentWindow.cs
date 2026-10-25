@@ -82,7 +82,7 @@ public sealed class SupplierInstallmentWindow : Window
             note.Clear();
             Refresh();
         }
-        catch (Exception ex) { MessageBox.Show(ex.Message, "تعذر تسجيل الدفعة", MessageBoxButton.OK, MessageBoxImage.Warning); }
+        catch (Exception ex) { MessageBox.Show(ArabicUi.ErrorMessage(ex, "تعذر تسجيل الدفعة. تحقق من البيانات وحاول مرة أخرى."), "تعذر تسجيل الدفعة", MessageBoxButton.OK, MessageBoxImage.Warning); }
     }
 
     private void PreviewSchedule()

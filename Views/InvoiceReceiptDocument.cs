@@ -16,20 +16,37 @@ internal static class InvoiceReceiptDocument
         Invoice invoice, Customer? customer,
         CompanySettings settings, IReadOnlyList<Installment> installments)
     {
+        var representativeName = GetRepresentativeDisplayName(invoice);
+        if (string.IsNullOrWhiteSpace(representativeName) || !ShouldShowRepresentative(invoice.Type, settings))
+            representativeName = null;
+
         // A4 → full enterprise layout via the shared engine
         if (settings.PaperSize.Equals("A4", StringComparison.OrdinalIgnoreCase))
-            return ErpPrintDocument.CreateInvoiceDocument(invoice, customer, settings, installments);
+            return ErpPrintDocument.CreateInvoiceDocument(invoice, customer, settings, installments, representativeName);
 
         // Thermal receipt layout (compact, unchanged business logic)
-        return CreateThermalReceipt(invoice, customer, settings, installments);
+        return CreateThermalReceipt(invoice, customer, settings, installments, representativeName);
     }
+
+    internal static bool ShouldShowRepresentative(string invoiceType, CompanySettings settings)
+    {
+        var internalInvoice = invoiceType.Contains("داخلي", StringComparison.OrdinalIgnoreCase) ||
+                              invoiceType.Contains("internal", StringComparison.OrdinalIgnoreCase);
+        return internalInvoice
+            ? settings.ShowRepresentativeOnInternalInvoice
+            : settings.ShowRepresentativeOnCustomerInvoice;
+    }
+
+    internal static string GetRepresentativeDisplayName(Invoice invoice) =>
+        string.IsNullOrWhiteSpace(invoice.RepresentativeName) ? invoice.RepresentativeCode : invoice.RepresentativeName;
 
     // ─────────────────────────────────────────────────────────────────────────
     // Compact thermal receipt (58 mm / 80 mm)
     // ─────────────────────────────────────────────────────────────────────────
     private static FlowDocument CreateThermalReceipt(
         Invoice invoice, Customer? customer,
-        CompanySettings settings, IReadOnlyList<Installment> installments)
+        CompanySettings settings, IReadOnlyList<Installment> installments,
+        string? representativeName)
     {
         bool thermal58 = settings.PaperSize.Contains("58");
         double width   = thermal58 ? 219.2 : 302.4;
@@ -121,6 +138,8 @@ internal static class InvoiceReceiptDocument
         AddRule();
         Para($"رقم الفاتورة: {invoice.Number}     التاريخ: {invoice.Date:yyyy/MM/dd}", bold: true);
         Para($"نوع العملية: {invoice.Type}     الحالة: {invoice.Status}");
+        if (!string.IsNullOrWhiteSpace(representativeName))
+            Para("المندوب: " + representativeName);
 
         if (customer is not null)
         {

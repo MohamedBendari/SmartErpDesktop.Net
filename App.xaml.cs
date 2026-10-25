@@ -14,8 +14,8 @@ public partial class App : System.Windows.Application
         DispatcherUnhandledException += (_, args) =>
         {
             System.Windows.MessageBox.Show(
-                $"حدث خطأ غير متوقع وسيتم إغلاق البرنامج بأمان.\n{args.Exception.Message}",
-                "SMART ERP - خطأ في التشغيل", System.Windows.MessageBoxButton.OK,
+                $"حدث خطأ غير متوقع وسيتم إغلاق البرنامج بأمان.\n{Views.ArabicUi.ErrorMessage(args.Exception, "يرجى إعادة تشغيل البرنامج، وإذا تكرر الخطأ فتواصل مع الدعم الفني.")}",
+                "سمارت لإدارة الأعمال - خطأ في التشغيل", System.Windows.MessageBoxButton.OK,
                 System.Windows.MessageBoxImage.Error);
             args.Handled = true;
             Shutdown(-1);
@@ -28,11 +28,11 @@ public partial class App : System.Windows.Application
             MainWindow = mainWindow;
             mainWindow.Show();
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             System.Windows.MessageBox.Show(
-                $"تعذر بدء SMART ERP أو تهيئة قاعدة البيانات. تحقق من صلاحية الكتابة في مجلد بيانات المستخدم.\n\nالتفاصيل: {ex.Message}",
-                "SMART ERP - تعذر بدء التشغيل", System.Windows.MessageBoxButton.OK,
+                "تعذر بدء البرنامج أو تهيئة قاعدة البيانات. تحقق من إعدادات الجهاز ومجلد البيانات، ثم حاول مرة أخرى.",
+                "سمارت لإدارة الأعمال - تعذر بدء التشغيل", System.Windows.MessageBoxButton.OK,
                 System.Windows.MessageBoxImage.Error);
             Shutdown(-1);
         }

@@ -2,8 +2,14 @@ using SmartErpDesktop.Models;
 namespace SmartErpDesktop.Services;
 public sealed class MockErpService
 {
+    public sealed record CommissionSummary(decimal Earned, decimal Approved, decimal Unapproved, decimal Paid, decimal Outstanding, int AccrualCount, int ApprovalCount, int PayoutReceiptCount);
     public List<Product> Products { get; } = new();
     public List<Customer> Customers { get; } = new();
+    public List<Representative> Representatives { get; } = new();
+    public List<CommissionRule> CommissionRules { get; } = new();
+    public List<CommissionAccrual> CommissionAccruals { get; } = new();
+    public List<CommissionApproval> CommissionApprovals { get; } = new();
+    public List<RepresentativePayout> RepresentativePayouts { get; } = new();
     public List<Invoice> Invoices { get; } = new();
     public List<Payment> Payments { get; } = new();
     public List<Installment> Installments { get; } = new();
@@ -20,8 +26,15 @@ public sealed class MockErpService
     private int expenseSequence = 0;
     private int invoiceSequence = 1004;
     private int receiptSequence = 501;
-    public MockErpService()
+    private readonly string? dataStorePath;
+
+    public MockErpService() : this(null)
     {
+    }
+
+    public MockErpService(string? databasePath)
+    {
+        dataStorePath = databasePath;
         Products.AddRange(new[]
         {
             new Product
@@ -211,10 +224,15 @@ public sealed class MockErpService
 
         // Load operational data from the same SQLite file used by CompanySettingsService.
         // Existing settings are preserved; operational tables are separate.
-        if (ErpDataStore.TryLoad(this, out var savedState))
+        if (ErpDataStore.TryLoad(this, out var savedState, dataStorePath))
         {
             Products.Clear(); Products.AddRange(savedState.Products);
             Customers.Clear(); Customers.AddRange(savedState.Customers);
+            Representatives.Clear(); Representatives.AddRange(savedState.Representatives);
+            CommissionRules.Clear(); CommissionRules.AddRange(savedState.CommissionRules);
+            CommissionAccruals.Clear(); CommissionAccruals.AddRange(savedState.CommissionAccruals);
+            CommissionApprovals.Clear(); CommissionApprovals.AddRange(savedState.CommissionApprovals);
+            RepresentativePayouts.Clear(); RepresentativePayouts.AddRange(savedState.RepresentativePayouts);
             Invoices.Clear(); Invoices.AddRange(savedState.Invoices);
             Payments.Clear(); Payments.AddRange(savedState.Payments);
             Installments.Clear(); Installments.AddRange(savedState.Installments);
@@ -340,7 +358,7 @@ public sealed class MockErpService
     }
 
     /// <summary>Persist all operational collections atomically to the shared SQLite database.</summary>
-    public void SaveChanges() => ErpDataStore.Save(this);
+    public void SaveChanges() => ErpDataStore.Save(this, dataStorePath);
 
     public (decimal NetProfit, decimal Sales, decimal CostOfGoods, decimal Expenses, bool HasCompleteCostSnapshot) CalculateNetProfit(DateTime from, DateTime to)
     {
@@ -512,6 +530,338 @@ public sealed class MockErpService
         SaveChanges();
     }
 
+    public void SaveRepresentative(Representative? representative, string code, string name, string phone, string address, string notes)
+    {
+        code = code.Trim();
+        name = name.Trim();
+        phone = phone.Trim();
+        address = address.Trim();
+        notes = notes.Trim();
+        if (code.Length == 0 || name.Length == 0)
+            throw new InvalidOperationException("كود المندوب والاسم مطلوبان.");
+        if (Representatives.Any(x => !ReferenceEquals(x, representative) && x.Code.Equals(code, StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidOperationException("كود المندوب مستخدم بالفعل.");
+        if (phone.Any(c => !char.IsDigit(c) && c != '+' && c != '-' && c != ' '))
+            throw new InvalidOperationException("رقم الهاتف غير صحيح.");
+        if (representative is not null && !representative.Code.Equals(code, StringComparison.OrdinalIgnoreCase) &&
+            (Invoices.Any(x => x.RepresentativeCode.Equals(representative.Code, StringComparison.OrdinalIgnoreCase)) ||
+             CommissionRules.Any(x => x.RepresentativeCode.Equals(representative.Code, StringComparison.OrdinalIgnoreCase))))
+            throw new InvalidOperationException("لا يمكن تغيير كود مندوب مرتبط بفواتير أو قواعد عمولة محفوظة.");
+
+        var isNew = representative is null;
+        representative ??= new Representative();
+        var previous = (representative.Code, representative.Name, representative.Phone, representative.Address, representative.Notes, representative.IsActive);
+        representative.Code = code;
+        representative.Name = name;
+        representative.Phone = phone;
+        representative.Address = address;
+        representative.Notes = notes;
+        if (isNew) representative.IsActive = true;
+        if (isNew) Representatives.Add(representative);
+        try
+        {
+            SaveChanges();
+        }
+        catch
+        {
+            if (isNew) Representatives.Remove(representative);
+            else
+            {
+                representative.Code = previous.Code;
+                representative.Name = previous.Name;
+                representative.Phone = previous.Phone;
+                representative.Address = previous.Address;
+                representative.Notes = previous.Notes;
+                representative.IsActive = previous.IsActive;
+            }
+            throw;
+        }
+    }
+
+    public void SetRepresentativeActive(Representative representative, bool isActive)
+    {
+        ArgumentNullException.ThrowIfNull(representative);
+        if (!Representatives.Contains(representative))
+            throw new InvalidOperationException("المندوب المحدد غير موجود.");
+        var previous = representative.IsActive;
+        representative.IsActive = isActive;
+        try
+        {
+            SaveChanges();
+        }
+        catch
+        {
+            representative.IsActive = previous;
+            throw;
+        }
+    }
+
+    public bool RepresentativeHasHistory(Representative representative) => Invoices.Any(x =>
+        x.RepresentativeCode.Equals(representative.Code, StringComparison.OrdinalIgnoreCase));
+
+    public IReadOnlyList<string> CommissionSaleTypes { get; } = new[] { "كاش", "قسط أفراد", "آجل تاجر" };
+
+    public void SaveCommissionRule(CommissionRule? rule, string representativeCode, string description,
+        string? productCode, string? saleType, decimal ratePercent, int priority, bool isActive)
+    {
+        representativeCode = representativeCode?.Trim() ?? "";
+        description = description?.Trim() ?? "";
+        productCode = productCode?.Trim() ?? "";
+        saleType = saleType?.Trim() ?? "";
+        if (representativeCode.Length == 0 || description.Length == 0)
+            throw new InvalidOperationException("يجب تحديد المندوب ووصف القاعدة.");
+        if (ratePercent < 0)
+            throw new InvalidOperationException("نسبة العمولة لا يمكن أن تكون سالبة.");
+        if (priority < 0)
+            throw new InvalidOperationException("الأولوية يجب أن تكون صفراً أو أكبر.");
+        if (productCode.Length > 0 && !Products.Any(p => p.Code.Equals(productCode, StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidOperationException("الصنف المحدد غير موجود.");
+        if (saleType.Length > 0 && !CommissionSaleTypes.Contains(saleType, StringComparer.OrdinalIgnoreCase))
+            throw new InvalidOperationException("نوع البيع المحدد غير مدعوم.");
+
+        var existing = rule is null ? null : CommissionRules.FirstOrDefault(x => ReferenceEquals(x, rule));
+        if (rule is not null && existing is null)
+            throw new InvalidOperationException("قاعدة العمولة المحددة غير موجودة.");
+        var representative = Representatives.FirstOrDefault(x => x.Code.Equals(representativeCode, StringComparison.OrdinalIgnoreCase));
+        if (existing is null && (representative is null || !representative.IsActive))
+            throw new InvalidOperationException("يجب اختيار مندوب نشط لإنشاء قاعدة جديدة.");
+        if (existing is not null && !existing.RepresentativeCode.Equals(representativeCode, StringComparison.OrdinalIgnoreCase) &&
+            (representative is null || !representative.IsActive))
+            throw new InvalidOperationException("لا يمكن نقل القاعدة إلى مندوب غير نشط أو غير موجود.");
+        if (existing?.Basis is not CommissionBasis.LineValueAfterLineDiscount && existing is not null)
+            throw new InvalidOperationException("أساس العمولة المخزن غير مدعوم ولا يمكن تغييره ضمن هذه المرحلة.");
+
+        if (CommissionRules.Any(x => !ReferenceEquals(x, existing) &&
+            x.RepresentativeCode.Equals(representativeCode, StringComparison.OrdinalIgnoreCase) &&
+            x.ProductCode.Equals(productCode, StringComparison.OrdinalIgnoreCase) &&
+            x.SaleType.Equals(saleType, StringComparison.OrdinalIgnoreCase) && x.Priority == priority))
+            throw new InvalidOperationException("توجد قاعدة بنفس المندوب والنطاق والأولوية بالفعل.");
+
+        var target = existing ?? new CommissionRule();
+        var previous = existing is null ? null : new CommissionRule
+        {
+            Id = target.Id, RepresentativeCode = target.RepresentativeCode, Description = target.Description,
+            ProductCode = target.ProductCode, SaleType = target.SaleType, RatePercent = target.RatePercent,
+            Basis = target.Basis, Priority = target.Priority, IsActive = target.IsActive
+        };
+        target.RepresentativeCode = representativeCode;
+        target.Description = description;
+        target.ProductCode = productCode;
+        target.SaleType = saleType;
+        target.RatePercent = ratePercent;
+        target.Basis = CommissionBasis.LineValueAfterLineDiscount;
+        target.Priority = priority;
+        target.IsActive = isActive;
+        if (existing is null) CommissionRules.Add(target);
+        try { SaveChanges(); }
+        catch
+        {
+            if (existing is null) CommissionRules.Remove(target);
+            else
+            {
+                target.RepresentativeCode = previous!.RepresentativeCode;
+                target.Description = previous.Description;
+                target.ProductCode = previous.ProductCode;
+                target.SaleType = previous.SaleType;
+                target.RatePercent = previous.RatePercent;
+                target.Basis = previous.Basis;
+                target.Priority = previous.Priority;
+                target.IsActive = previous.IsActive;
+            }
+            throw;
+        }
+    }
+
+    public void SetCommissionRuleActive(CommissionRule rule, bool isActive)
+    {
+        ArgumentNullException.ThrowIfNull(rule);
+        if (!CommissionRules.Contains(rule)) throw new InvalidOperationException("قاعدة العمولة المحددة غير موجودة.");
+        var previous = rule.IsActive;
+        rule.IsActive = isActive;
+        try { SaveChanges(); }
+        catch { rule.IsActive = previous; throw; }
+    }
+
+    /// <summary>Resolves a configured rule for future use; this does not calculate or accrue commission.</summary>
+    public CommissionRule? ResolveCommissionRule(string representativeCode, string productCode, string saleType) =>
+        CommissionRules.Where(rule => rule.IsActive && rule.RepresentativeCode.Equals(representativeCode, StringComparison.OrdinalIgnoreCase) &&
+                (rule.ProductCode.Length == 0 || rule.ProductCode.Equals(productCode, StringComparison.OrdinalIgnoreCase)) &&
+                (rule.SaleType.Length == 0 || rule.SaleType.Equals(saleType, StringComparison.OrdinalIgnoreCase)))
+            .OrderBy(rule => rule.ProductCode.Length > 0 && rule.SaleType.Length > 0 ? 0 : rule.ProductCode.Length > 0 ? 1 : rule.SaleType.Length > 0 ? 2 : 3)
+            .ThenBy(rule => rule.Priority)
+            .ThenBy(rule => rule.Id, StringComparer.Ordinal)
+            .FirstOrDefault();
+
+    private List<CommissionAccrual> CreateCommissionAccruals(Payment payment)
+    {
+        var result = new List<CommissionAccrual>();
+        var processedAllocationIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var allocation in payment.Allocations)
+        {
+            if (string.IsNullOrWhiteSpace(allocation.Id) || allocation.Amount <= 0 || !processedAllocationIds.Add(allocation.Id)) continue;
+            var invoice = Invoices.FirstOrDefault(x => x.Number.Equals(allocation.InvoiceNumber, StringComparison.OrdinalIgnoreCase));
+            if (invoice is null || string.IsNullOrWhiteSpace(invoice.RepresentativeCode) ||
+                string.IsNullOrWhiteSpace(invoice.RepresentativeName) || invoice.Lines.Count == 0) continue;
+
+            var eligibleBase = invoice.Lines.Sum(line => line.Total);
+            if (invoice.Total <= 0 || eligibleBase <= 0 || invoice.Total > eligibleBase ||
+                invoice.DiscountPercent < 0 || invoice.DiscountPercent > 100 ||
+                invoice.Lines.Any(line => string.IsNullOrWhiteSpace(line.Id)) ||
+                invoice.Lines.Select(line => line.Id).Distinct(StringComparer.Ordinal).Count() != invoice.Lines.Count)
+                continue;
+
+            // Customer collections are linked to an invoice, not a product. The explicit
+            // allocation policy is pro rata over each line's post-line-discount value.
+            // Phase 3's commission basis excludes invoice-wide discounts, so a complete
+            // collection maps back to each line's full eligible value.
+            var oldUnlinedAccruals = CommissionAccruals.Any(x =>
+                x.InvoiceNumber.Equals(invoice.Number, StringComparison.OrdinalIgnoreCase) &&
+                string.IsNullOrWhiteSpace(x.InvoiceLineId));
+            if (oldUnlinedAccruals) continue;
+
+            var snapshots = invoice.Lines.Select(line => new CommissionAccrualLineSnapshot
+            {
+                InvoiceLineId = line.Id,
+                ProductCode = line.ProductCode,
+                ProductName = line.ProductName,
+                Quantity = line.Quantity,
+                UnitPrice = line.UnitPrice,
+                LineDiscount = line.Discount,
+                EligibleValue = line.Total
+            }).ToList();
+            foreach (var line in invoice.Lines)
+            {
+                var rule = ResolveCommissionRule(invoice.RepresentativeCode, line.ProductCode, invoice.Type);
+                if (rule is null || rule.Basis != CommissionBasis.LineValueAfterLineDiscount || rule.RatePercent < 0) continue;
+
+                var priorLineAccruals = CommissionAccruals.Concat(result).Where(x =>
+                    x.InvoiceNumber.Equals(invoice.Number, StringComparison.OrdinalIgnoreCase) && x.InvoiceLineId == line.Id).ToList();
+                if (priorLineAccruals.Any(x => x.SourceAllocationId == allocation.Id)) continue;
+                var priorBasis = priorLineAccruals.Sum(x => x.CollectedEligibleAmount);
+                var lineShare = decimal.Round(allocation.Amount * line.Total / invoice.Total, 2, MidpointRounding.AwayFromZero);
+                var eligibleCollected = Math.Min(Math.Max(0, line.Total - priorBasis), lineShare);
+                if (eligibleCollected <= 0) continue;
+
+                var sameRateAccruals = priorLineAccruals.Where(x => x.RuleId == rule.Id && x.RatePercent == rule.RatePercent).ToList();
+                var rateBasis = sameRateAccruals.Sum(x => x.CollectedEligibleAmount);
+                var priorCommission = sameRateAccruals.Sum(x => x.CommissionAmount);
+                var cumulativeCommission = decimal.Round((rateBasis + eligibleCollected) * rule.RatePercent / 100m, 2, MidpointRounding.AwayFromZero);
+                var commission = Math.Max(0, cumulativeCommission - priorCommission);
+
+                result.Add(new CommissionAccrual
+                {
+                    SourceAllocationId = allocation.Id,
+                    PaymentReceiptNumber = payment.ReceiptNumber,
+                    CollectedAt = payment.Date,
+                    InvoiceNumber = invoice.Number,
+                    InvoiceLineId = line.Id,
+                    ProductCode = line.ProductCode,
+                    RepresentativeCode = invoice.RepresentativeCode,
+                    RepresentativeName = invoice.RepresentativeName,
+                    RuleId = rule.Id,
+                    RuleDescription = rule.Description,
+                    RuleScopeSnapshot = $"Product={rule.ProductCode}; SaleType={rule.SaleType}; Priority={rule.Priority}",
+                    RatePercent = rule.RatePercent,
+                    Basis = rule.Basis,
+                    InvoiceEligibleBase = line.Total,
+                    InvoiceTotal = invoice.Total,
+                    InvoiceDiscountPercent = invoice.DiscountPercent,
+                    PaymentAllocationAmount = allocation.Amount,
+                    CollectedEligibleAmount = eligibleCollected,
+                    CommissionAmount = commission,
+                    InvoiceLines = snapshots
+                });
+            }
+        }
+        return result;
+    }
+
+    public CommissionAccrualStatus GetCommissionAccrualStatus(CommissionAccrual accrual)
+    {
+        if (!CommissionAccruals.Contains(accrual)) throw new InvalidOperationException("استحقاق العمولة غير موجود.");
+        if (!CommissionApprovals.Any(x => x is not null && x.AccrualId == accrual.Id)) return CommissionAccrualStatus.Earned;
+        var paid = RepresentativePayouts.Where(p => p is not null).SelectMany(p => p.Allocations ?? new List<CommissionPayoutAllocation>())
+            .Where(x => x is not null && x.AccrualId == accrual.Id).Sum(x => x.Amount);
+        if (paid >= accrual.CommissionAmount) return CommissionAccrualStatus.Paid;
+        return paid > 0 ? CommissionAccrualStatus.PartiallyPaid : CommissionAccrualStatus.Approved;
+    }
+
+    public CommissionSummary GetCommissionSummary(string representativeCode)
+    {
+        var accruals = CommissionAccruals.Where(x => x is not null && string.Equals(x.RepresentativeCode, representativeCode, StringComparison.OrdinalIgnoreCase)).ToList();
+        var ids = accruals.Select(x => x.Id).ToHashSet(StringComparer.Ordinal);
+        var approvals = CommissionApprovals.Where(x => x is not null && ids.Contains(x.AccrualId ?? "")).ToList();
+        var approvedIds = approvals.Select(x => x.AccrualId).ToHashSet(StringComparer.Ordinal);
+        var earned = accruals.Sum(x => x.CommissionAmount);
+        var approved = accruals.Where(x => approvedIds.Contains(x.Id)).Sum(x => x.CommissionAmount);
+        var paid = RepresentativePayouts.Where(p => p is not null).SelectMany(p => (p.Allocations ?? new List<CommissionPayoutAllocation>()).Where(a => a is not null).Select(a => (Payout: p, Allocation: a)))
+            .Where(x => ids.Contains(x.Allocation.AccrualId ?? "")).Sum(x => x.Allocation.Amount);
+        var receipts = RepresentativePayouts.Count(p => p is not null && string.Equals(p.RepresentativeCode, representativeCode, StringComparison.OrdinalIgnoreCase));
+        return new CommissionSummary(earned, approved, earned - approved, paid, Math.Max(0, approved - paid), accruals.Count, approvals.Count, receipts);
+    }
+
+    public decimal GetAccruedCommission(string representativeCode) => GetCommissionSummary(representativeCode).Earned;
+
+    public decimal GetApprovedCommission(string representativeCode) => GetCommissionSummary(representativeCode).Approved;
+
+    public decimal GetPaidCommission(string representativeCode) => GetCommissionSummary(representativeCode).Paid;
+
+    public decimal GetOutstandingCommission(string representativeCode) => GetCommissionSummary(representativeCode).Outstanding;
+
+    public void ApproveCommissionAccruals(IEnumerable<string> accrualIds, string approvedBy)
+    {
+        ArgumentNullException.ThrowIfNull(accrualIds);
+        approvedBy = approvedBy?.Trim() ?? "";
+        if (approvedBy.Length == 0) throw new InvalidOperationException("اسم المسؤول عن الاعتماد مطلوب.");
+        var ids = accrualIds.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.Ordinal).ToList();
+        if (ids.Count == 0) throw new InvalidOperationException("حدد استحقاق عمولة واحداً على الأقل.");
+        var selected = ids.Select(id => CommissionAccruals.FirstOrDefault(x => x.Id == id) ?? throw new InvalidOperationException("لم يعد استحقاق العمولة المحدد موجوداً.")).ToList();
+        if (selected.Any(x => x.CommissionAmount <= 0 || CommissionApprovals.Any(a => a.AccrualId == x.Id)))
+            throw new InvalidOperationException("يمكن اعتماد الاستحقاقات غير المعتمدة ذات قيمة العمولة الموجبة فقط.");
+        var created = selected.Select(x => new CommissionApproval { AccrualId = x.Id, Date = DateTime.Now, ApprovedBy = approvedBy }).ToList();
+        CommissionApprovals.AddRange(created);
+        try { SaveChanges(); }
+        catch { foreach (var approval in created) CommissionApprovals.Remove(approval); throw; }
+    }
+
+    public RepresentativePayout RecordRepresentativePayout(string representativeCode, decimal amount, string method, string notes)
+    {
+        representativeCode = representativeCode?.Trim() ?? "";
+        method = method?.Trim() ?? "";
+        notes = notes?.Trim() ?? "";
+        amount = decimal.Round(amount, 2, MidpointRounding.AwayFromZero);
+        if (representativeCode.Length == 0 || method.Length == 0 || amount <= 0)
+            throw new InvalidOperationException("المندوب ومبلغ الصرف الموجب وطريقة الدفع مطلوبة.");
+        var outstanding = GetOutstandingCommission(representativeCode);
+        if (amount > outstanding) throw new InvalidOperationException($"مبلغ الصرف يتجاوز العمولات المعتمدة المتبقية للصرف ({outstanding:N2}).");
+
+        var remaining = amount;
+        var allocations = new List<CommissionPayoutAllocation>();
+        var eligibleAccruals = CommissionAccruals
+            .Where(x => x.RepresentativeCode.Equals(representativeCode, StringComparison.OrdinalIgnoreCase) && CommissionApprovals.Any(a => a.AccrualId == x.Id))
+            .OrderBy(x => x.CollectedAt).ThenBy(x => x.Id, StringComparer.Ordinal).ToList();
+        foreach (var accrual in eligibleAccruals)
+        {
+            if (remaining <= 0) break;
+            var paid = RepresentativePayouts.SelectMany(x => x.Allocations).Where(x => x.AccrualId == accrual.Id).Sum(x => x.Amount);
+            var open = Math.Max(0, accrual.CommissionAmount - paid);
+            var applied = Math.Min(remaining, open);
+            if (applied <= 0) continue;
+            allocations.Add(new CommissionPayoutAllocation { AccrualId = accrual.Id, Amount = applied });
+            remaining = decimal.Round(remaining - applied, 2, MidpointRounding.AwayFromZero);
+        }
+        if (remaining != 0) throw new InvalidOperationException("تعذر توزيع مبلغ الصرف بالكامل على استحقاقات العمولات المعتمدة.");
+
+        var representative = Representatives.FirstOrDefault(x => x.Code.Equals(representativeCode, StringComparison.OrdinalIgnoreCase));
+        var name = representative?.Name ?? CommissionAccruals.First(x => x.RepresentativeCode.Equals(representativeCode, StringComparison.OrdinalIgnoreCase)).RepresentativeName;
+        var receipt = "RCP-" + (ErpDataStore.MaxSuffix(RepresentativePayouts.Select(x => x.ReceiptNumber), "RCP-") + 1).ToString("000000");
+        var payout = new RepresentativePayout { ReceiptNumber = receipt, RepresentativeCode = representativeCode, RepresentativeName = name, Amount = amount, Method = method, Notes = notes, Allocations = allocations };
+        RepresentativePayouts.Add(payout);
+        try { SaveChanges(); }
+        catch { RepresentativePayouts.Remove(payout); throw; }
+        return payout;
+    }
+
     public bool RemoveOrArchiveTrader(Customer trader)
     {
         if (!trader.Type.Equals("تاجر", StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("لا يمكن حذف سجل عميل من إدارة التجار.");
@@ -663,7 +1013,9 @@ public sealed class MockErpService
         decimal discount,
         decimal discountPercent = 0,
         int installmentMonths = 0,
-        IEnumerable<Installment>? schedule = null)
+        IEnumerable<Installment>? schedule = null,
+        string representativeCode = "",
+        string initialPaymentMethod = "نقدي")
     {
         if (lines.Count == 0)
         {
@@ -702,6 +1054,8 @@ public sealed class MockErpService
             throw new InvalidOperationException(
                 "راجع قيمة المقدم؛ يجب أن تكون بين صفر وإجمالي الفاتورة.");
         }
+        if (paid > 0 && string.IsNullOrWhiteSpace(initialPaymentMethod))
+            throw new InvalidOperationException("حدد طريقة دفع المقدم.");
         if (type != "كاش" && customer == null)
         {
             throw new InvalidOperationException(
@@ -711,12 +1065,18 @@ public sealed class MockErpService
             throw new InvalidOperationException("اختر سجلاً من نوع تاجر للبيع الآجل.");
         if (type == "قسط أفراد" && customer?.Type != "فرد" && customer?.Type != "تاجر")
             throw new InvalidOperationException("اختر عميلاً صالحاً للبيع بالتقسيط.");
+        var representative = string.IsNullOrWhiteSpace(representativeCode)
+            ? null
+            : Representatives.FirstOrDefault(x => x.Code.Equals(representativeCode.Trim(), StringComparison.OrdinalIgnoreCase) && x.IsActive)
+                ?? throw new InvalidOperationException("المندوب المحدد غير نشط أو غير موجود.");
         var invoice = new Invoice
         {
             Number = $"INV-{++invoiceSequence}",
             Date = DateTime.Now,
             CustomerName = customer?.Name ?? "عميل نقدي",
             CustomerCode = customer?.Code ?? "",
+            RepresentativeCode = representative?.Code ?? "",
+            RepresentativeName = representative?.Name ?? "",
             Type = type,
             Total = total,
             DiscountPercent = discountPercent,
@@ -730,6 +1090,7 @@ public sealed class MockErpService
                     : "رصيد قائم",
             Lines = lines.Select(line => new InvoiceLine
             {
+                Id = string.IsNullOrWhiteSpace(line.Id) ? Guid.NewGuid().ToString("N") : line.Id,
                 ProductCode = line.ProductCode,
                 ProductName = line.ProductName,
                 Quantity = line.Quantity,
@@ -741,36 +1102,110 @@ public sealed class MockErpService
         var scheduleItems = schedule?.OrderBy(x => x.DueDate).ToList() ?? new List<Installment>();
         if (schedule is not null && (type != "قسط أفراد" || scheduleItems.Count == 0 || scheduleItems.Any(x => x.Amount <= 0 || x.DueDate == default) || scheduleItems.Sum(x => x.Amount) != invoice.Remaining))
             throw new InvalidOperationException("جدول الأقساط يجب أن يخص بيع التقسيط وأن يساوي مجموعُه المبلغ المتبقي.");
-        foreach (var line in lines)
+        var invoiceSequenceBefore = invoiceSequence - 1;
+        var receiptSequenceBefore = receiptSequence;
+        var customerBalanceBefore = customer?.Balance;
+        var productStocksBefore = lines
+            .Select(line => Products.First(product => product.Code == line.ProductCode))
+            .Distinct()
+            .ToDictionary(product => product, product => product.Stock);
+        var addedMovements = new List<StockMovement>();
+        var addedInstallments = new List<Installment>();
+        Payment? initialPayment = null;
+        var initialPaymentAdded = false;
+        var createdAccruals = new List<CommissionAccrual>();
+        try
         {
-            var product = Products.First(
-                p => p.Code == line.ProductCode);
-            product.Stock -= line.Quantity;
-            Movements.Insert(0, new StockMovement
+            foreach (var line in lines)
             {
-                Date = DateTime.Now,
-                ProductCode = product.Code,
-                ProductName = product.Name,
-                Type = "بيع",
-                Quantity = -line.Quantity,
-                Reason = invoice.Number
-            });
+                var product = Products.First(p => p.Code == line.ProductCode);
+                product.Stock -= line.Quantity;
+                var movement = new StockMovement
+                {
+                    Date = DateTime.Now,
+                    ProductCode = product.Code,
+                    ProductName = product.Name,
+                    Type = "بيع",
+                    Quantity = -line.Quantity,
+                    Reason = invoice.Number
+                };
+                Movements.Insert(0, movement);
+                addedMovements.Add(movement);
+            }
+
+            Invoices.Insert(0, invoice);
+            for (int i = 0; i < scheduleItems.Count; i++)
+            {
+                scheduleItems[i].InvoiceNumber = invoice.Number;
+                scheduleItems[i].CustomerName = invoice.CustomerName;
+                scheduleItems[i].Sequence = i + 1;
+                Installments.Add(scheduleItems[i]);
+                addedInstallments.Add(scheduleItems[i]);
+            }
+            if (customer is not null)
+                customer.Balance += invoice.Remaining;
+
+            if (paid > 0)
+            {
+                var sourceId = GetInvoiceInitialPaymentSourceId(invoice.Number);
+                initialPayment = Payments.FirstOrDefault(payment =>
+                    payment.SourceType == PaymentSourceType.InvoiceInitialPayment &&
+                    payment.SourceId.Equals(sourceId, StringComparison.Ordinal));
+                if (initialPayment is not null)
+                {
+                    if (initialPayment.Amount != paid || initialPayment.Allocations.Count != 1 ||
+                        !initialPayment.Allocations[0].InvoiceNumber.Equals(invoice.Number, StringComparison.OrdinalIgnoreCase) ||
+                        initialPayment.Allocations[0].Amount != paid)
+                        throw new InvalidOperationException("مصدر الدفعة المقدمة المحفوظ لا يتطابق مع الفاتورة.");
+                }
+                else
+                {
+                    initialPayment = new Payment
+                    {
+                        ReceiptNumber = $"REC-{++receiptSequence}",
+                        Date = invoice.Date,
+                        CustomerName = invoice.CustomerName,
+                        Amount = paid,
+                        Method = initialPaymentMethod.Trim(),
+                        BalanceBefore = customerBalanceBefore.GetValueOrDefault() + invoice.Total,
+                        BalanceAfter = customerBalanceBefore.GetValueOrDefault() + invoice.Remaining,
+                        Note = $"دفعة مقدمة عند إنشاء الفاتورة {invoice.Number}",
+                        SourceType = PaymentSourceType.InvoiceInitialPayment,
+                        SourceId = sourceId,
+                        Allocations =
+                        {
+                            new PaymentAllocation { InvoiceNumber = invoice.Number, Amount = paid }
+                        }
+                    };
+                    Payments.Insert(0, initialPayment);
+                    initialPaymentAdded = true;
+                }
+
+                createdAccruals = CreateCommissionAccruals(initialPayment);
+                CommissionAccruals.AddRange(createdAccruals);
+            }
+
+            SaveChanges();
         }
-        Invoices.Insert(0, invoice);
-        for (int i = 0; i < scheduleItems.Count; i++)
+        catch
         {
-            scheduleItems[i].InvoiceNumber = invoice.Number;
-            scheduleItems[i].CustomerName = invoice.CustomerName;
-            scheduleItems[i].Sequence = i + 1;
-            Installments.Add(scheduleItems[i]);
+            foreach (var accrual in createdAccruals) CommissionAccruals.Remove(accrual);
+            if (initialPaymentAdded && initialPayment is not null) Payments.Remove(initialPayment);
+            foreach (var installment in addedInstallments) Installments.Remove(installment);
+            Invoices.Remove(invoice);
+            foreach (var movement in addedMovements) Movements.Remove(movement);
+            foreach (var (product, stock) in productStocksBefore) product.Stock = stock;
+            if (customer is not null && customerBalanceBefore.HasValue)
+                customer.Balance = customerBalanceBefore.Value;
+            invoiceSequence = invoiceSequenceBefore;
+            receiptSequence = receiptSequenceBefore;
+            throw;
         }
-        if (customer != null)
-        {
-            customer.Balance += invoice.Remaining;
-        }
-        SaveChanges();
         return invoice;
     }
+
+    private static string GetInvoiceInitialPaymentSourceId(string invoiceNumber) =>
+        $"invoice-initial-payment:{invoiceNumber}";
     public void AddInstallmentSchedule(Invoice invoice, IEnumerable<Installment> schedule)
     {
         ArgumentNullException.ThrowIfNull(invoice);
@@ -812,6 +1247,7 @@ public sealed class MockErpService
     public Payment CollectForInstallment(Installment installment, decimal amount, string method, string note)
     {
         ArgumentNullException.ThrowIfNull(installment);
+        amount = decimal.Round(amount, 2, MidpointRounding.AwayFromZero);
         if (!Installments.Contains(installment))
             throw new InvalidOperationException("القسط المحدد غير موجود في جدول الأقساط الحالي.");
         if (amount <= 0)
@@ -831,6 +1267,9 @@ public sealed class MockErpService
             throw new InvalidOperationException($"مبلغ التحصيل أكبر من المتبقي على الفاتورة ({invoice.Remaining:N2} ج.م).");
 
         var before = customer.Balance;
+        var installmentPaidBefore = installment.PaidAmount;
+        var invoicePaidBefore = invoice.Paid;
+        var invoiceStatusBefore = invoice.Status;
         installment.PaidAmount = decimal.Round(installment.PaidAmount + amount, 2, MidpointRounding.AwayFromZero);
         customer.Balance = decimal.Round(customer.Balance - amount, 2, MidpointRounding.AwayFromZero);
         invoice.Paid = decimal.Round(invoice.Paid + amount, 2, MidpointRounding.AwayFromZero);
@@ -847,8 +1286,24 @@ public sealed class MockErpService
             BalanceAfter = customer.Balance,
             Note = $"فاتورة {invoice.Number} | القسط {installment.Sequence} | {note?.Trim()}"
         };
+        payment.Allocations.Add(new PaymentAllocation { InvoiceNumber = invoice.Number, Amount = amount });
+        var createdAccruals = CreateCommissionAccruals(payment);
+        CommissionAccruals.AddRange(createdAccruals);
         Payments.Insert(0, payment);
-        SaveChanges();
+        try
+        {
+            SaveChanges();
+        }
+        catch
+        {
+            Payments.Remove(payment);
+            foreach (var accrual in createdAccruals) CommissionAccruals.Remove(accrual);
+            installment.PaidAmount = installmentPaidBefore;
+            customer.Balance = before;
+            invoice.Paid = invoicePaidBefore;
+            invoice.Status = invoiceStatusBefore;
+            throw;
+        }
         return payment;
     }
 
@@ -858,6 +1313,7 @@ public sealed class MockErpService
         string method,
         string note)
     {
+        amount = decimal.Round(amount, 2, MidpointRounding.AwayFromZero);
         if (amount <= 0)
         {
             throw new InvalidOperationException(
@@ -868,8 +1324,54 @@ public sealed class MockErpService
             throw new InvalidOperationException(
                 "مبلغ التحصيل أكبر من رصيد العميل.");
         }
+        var allocations = new List<PaymentAllocation>();
+        var outstandingInvoices = Invoices
+            .Where(invoice =>
+                (!string.IsNullOrWhiteSpace(invoice.CustomerCode) &&
+                 invoice.CustomerCode.Equals(customer.Code, StringComparison.OrdinalIgnoreCase)) ||
+                (string.IsNullOrWhiteSpace(invoice.CustomerCode) &&
+                 invoice.CustomerName.Equals(customer.Name, StringComparison.OrdinalIgnoreCase)))
+            .Where(invoice => invoice.Remaining > 0)
+            .OrderBy(invoice => invoice.Date)
+            .ThenBy(invoice => invoice.Number, StringComparer.Ordinal)
+            .ToList();
+        var unapplied = amount;
+        foreach (var invoice in outstandingInvoices)
+        {
+            if (unapplied <= 0) break;
+            var applied = Math.Min(unapplied, invoice.Remaining);
+            if (applied <= 0) continue;
+            allocations.Add(new PaymentAllocation { InvoiceNumber = invoice.Number, Amount = applied });
+            unapplied = decimal.Round(unapplied - applied, 2, MidpointRounding.AwayFromZero);
+        }
+
+        var invoiceBefore = allocations.Select(allocation =>
+        {
+            var invoice = Invoices.First(x => x.Number.Equals(allocation.InvoiceNumber, StringComparison.OrdinalIgnoreCase));
+            return (Invoice: invoice, Paid: invoice.Paid, Status: invoice.Status, Amount: allocation.Amount);
+        }).ToList();
+        var installmentBefore = new Dictionary<Installment, decimal>();
         var before = customer.Balance;
-        customer.Balance -= amount;
+        customer.Balance = decimal.Round(customer.Balance - amount, 2, MidpointRounding.AwayFromZero);
+        foreach (var item in invoiceBefore)
+        {
+            item.Invoice.Paid += item.Amount;
+            item.Invoice.Status = item.Invoice.Remaining <= 0
+                ? "\u0645\u0643\u062A\u0645\u0644\u0629"
+                : "\u0631\u0635\u064A\u062F \u0642\u0627\u0626\u0645";
+            var installmentAmount = item.Amount;
+            foreach (var installment in Installments
+                .Where(x => x.InvoiceNumber.Equals(item.Invoice.Number, StringComparison.OrdinalIgnoreCase))
+                .OrderBy(x => x.Sequence))
+            {
+                if (installmentAmount <= 0) break;
+                var installmentApplied = Math.Min(installmentAmount, installment.Remaining);
+                if (installmentApplied <= 0) continue;
+                installmentBefore.TryAdd(installment, installment.PaidAmount);
+                installment.PaidAmount += installmentApplied;
+                installmentAmount = decimal.Round(installmentAmount - installmentApplied, 2, MidpointRounding.AwayFromZero);
+            }
+        }
         var payment = new Payment
         {
             ReceiptNumber = $"REC-{++receiptSequence}",
@@ -879,10 +1381,30 @@ public sealed class MockErpService
             Method = method,
             BalanceBefore = before,
             BalanceAfter = customer.Balance,
-            Note = note
+            Note = note,
+            Allocations = allocations
         };
+        var createdAccruals = CreateCommissionAccruals(payment);
+        CommissionAccruals.AddRange(createdAccruals);
         Payments.Insert(0, payment);
-        SaveChanges();
+        try
+        {
+            SaveChanges();
+        }
+        catch
+        {
+            Payments.Remove(payment);
+            foreach (var accrual in createdAccruals) CommissionAccruals.Remove(accrual);
+            customer.Balance = before;
+            foreach (var item in invoiceBefore)
+            {
+                item.Invoice.Paid = item.Paid;
+                item.Invoice.Status = item.Status;
+            }
+            foreach (var item in installmentBefore)
+                item.Key.PaidAmount = item.Value;
+            throw;
+        }
         return payment;
     }
     public void AdjustStock(

@@ -47,7 +47,7 @@ public sealed class CustomerStatementWindow : Window
         var payments = service.Payments
             .Where(p => string.Equals(p.CustomerName, customer.Name, StringComparison.OrdinalIgnoreCase))
             .Select(p => new ErpPrintDocument.StatementRow(
-                p.Date, "تحصيل", p.ReceiptNumber, p.Method, 0m, p.Amount, p.BalanceAfter, p.Note))
+                p.Date, "\u062A\u062D\u0635\u064A\u0644", p.ReceiptNumber, p.Method, 0m, p.Amount, p.BalanceAfter, p.Note + (p.Allocations.Count == 0 ? "" : " | \u062A\u0648\u0632\u064A\u0639: " + string.Join(", ", p.Allocations.Select(a => $"{a.InvoiceNumber}: {a.Amount:N2}")))))
             .ToList();
 
         var rows = invoices.Concat(payments).OrderBy(x => x.Date).ToList();
@@ -106,7 +106,7 @@ public sealed class CustomerStatementWindow : Window
             }
             catch (Exception ex)
             {
-                MessageBox.Show("تعذرت طباعة كشف الحساب: " + ex.Message, "خطأ في الطباعة",
+                MessageBox.Show(ArabicUi.ErrorMessage(ex, "تعذرت طباعة كشف الحساب. تحقق من إعدادات الطابعة وحاول مرة أخرى."), "خطأ في الطباعة",
                     MessageBoxButton.OK, MessageBoxImage.Error);
             }
         };

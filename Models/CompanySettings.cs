@@ -11,5 +11,7 @@ public sealed class CompanySettings
     public string PaperSize { get; set; } = "حراري 80 مم";
     public bool ShowStoreInfo { get; set; } = true;
     public bool ShowPrintPreview { get; set; } = true;
+    public bool ShowRepresentativeOnCustomerInvoice { get; set; } = true;
+    public bool ShowRepresentativeOnInternalInvoice { get; set; }
     public string Theme { get; set; } = "فاتح";
 }

@@ -169,7 +169,7 @@
                                       SelectedIndex="0">
                                 <ComboBoxItem Content="حراري 80 مم"/>
                                 <ComboBoxItem Content="حراري 58 مم"/>
-                                <ComboBoxItem Content="A4"/>
+                                <ComboBoxItem Content="ورق A4" Tag="A4"/>
                             </ComboBox>
 
                             <CheckBox x:Name="ShowStoreInfoCheck"
@@ -179,6 +179,14 @@
                             <CheckBox x:Name="ShowPrintPreviewCheck"
                                       Content="عرض معاينة قبل الطباعة"
                                       IsChecked="True"
+                                      Margin="0,5,0,16"/>
+                            <CheckBox x:Name="ShowRepresentativeCustomerInvoiceCheck"
+                                      Content="إظهار المندوب على فواتير العملاء"
+                                      IsChecked="True"
+                                      Margin="0,5,0,16"/>
+                            <CheckBox x:Name="ShowRepresentativeInternalInvoiceCheck"
+                                      Content="إظهار المندوب على الفواتير الداخلية"
+                                      IsChecked="False"
                                       Margin="0,5,0,16"/>
                         </StackPanel>
 
@@ -215,15 +223,15 @@
                                        FontSize="21"
                                        FontWeight="Bold"
                                        Foreground="{StaticResource TextBrush}"/>
-                            <TextBlock Text="SMART ERP"
+                            <TextBlock Text="سمارت لإدارة الأعمال"
                                        FontSize="25"
                                        FontWeight="Bold"
                                        Foreground="{StaticResource GreenBrush}"
                                        Margin="0,24,0,8"/>
-                            <TextBlock Text="Desktop Edition"
+                            <TextBlock Text="إصدار سطح المكتب"
                                        FontSize="15"
                                        Foreground="{StaticResource TextBrush}"/>
-                            <TextBlock Text="WPF · C# · .NET 8 · SQLite"
+                            <TextBlock Text="تطبيق لإدارة المبيعات والمخزون والتحصيل"
                                        Margin="0,8,0,18"
                                        Foreground="{StaticResource MutedBrush}"/>
                             <TextBlock Text="بيانات الإعدادات تُحفظ محليًا على هذا الجهاز."
@@ -262,7 +270,7 @@
                        TextWrapping="Wrap"/>
 
             <TextBlock Grid.Column="2"
-                       Text="التخزين المحلي: SQLite"
+                       Text="تُحفظ البيانات محليًا على هذا الجهاز"
                        VerticalAlignment="Center"
                        Foreground="{StaticResource MutedBrush}"
                        FontSize="12"/>

@@ -17,6 +17,7 @@ public partial class QuickSaleView : UserControl
         service = s;
         navigate = n;
         CustomerBox.ItemsSource = service.Customers.Where(c => c.IsActive).ToList();
+        RepresentativeBox.ItemsSource = service.Representatives.Where(r => r.IsActive).OrderBy(r => r.Name).ToList();
         CartGrid.ItemsSource = cart;
         UpdateTotals();
         ProductSearchBox.Focus();
@@ -174,7 +175,7 @@ public partial class QuickSaleView : UserControl
                 schedule = scheduleWindow.ResultInstallments;
             }
 
-            var invoice = service.SaveSale(cart, type, CustomerBox.SelectedItem as Customer, Num(PaidBox), Num(InvoiceDiscountBox), pct, months, schedule);
+            var invoice = service.SaveSale(cart, type, CustomerBox.SelectedItem as Customer, Num(PaidBox), Num(InvoiceDiscountBox), pct, months, schedule, (RepresentativeBox.SelectedItem as Representative)?.Code ?? "", (InitialPaymentMethodBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "نقدي");
 
             saved = true;
             var message = $"تم حفظ الفاتورة التجريبية {invoice.Number}\nالإجمالي: {invoice.Total:N2} ج.م\nالمتبقي: {invoice.Remaining:N2} ج.م\nتم تحديث المخزون التجريبي.";
@@ -186,7 +187,7 @@ public partial class QuickSaleView : UserControl
         }
         catch (Exception ex)
         {
-            MessageBox.Show(ex.Message, "تعذر حفظ البيع", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(ArabicUi.ErrorMessage(ex, "تعذر حفظ عملية البيع. تحقق من البيانات وحاول مرة أخرى."), "تعذر حفظ البيع", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }
     private void Print_Click(object sender, RoutedEventArgs e)
@@ -207,7 +208,8 @@ public partial class QuickSaleView : UserControl
             Num(DiscountPercentBox),
             Num(InvoiceDiscountBox),
             Num(PaidBox),
-            printSettings);
+            printSettings,
+            (RepresentativeBox.SelectedItem as Representative)?.Name);
         ErpPrintDocument.CreatePreviewWindow(
             doc, "معاينة فاتورة البيع", "معاينة فاتورة بيع",
             printSettings, Window.GetWindow(this))

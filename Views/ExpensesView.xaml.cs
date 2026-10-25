@@ -96,7 +96,7 @@ using System.Windows.Shapes;
             catch (InvalidOperationException ex)
             {
                 MessageBox.Show(
-                    ex.Message,
+                    ArabicUi.ErrorMessage(ex, "تعذر تسجيل المصروف. تحقق من البيانات وحاول مرة أخرى."),
                     "تعذر تسجيل المصروف",
                     MessageBoxButton.OK,
                     MessageBoxImage.Warning);

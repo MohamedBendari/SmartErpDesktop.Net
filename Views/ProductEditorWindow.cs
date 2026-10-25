@@ -130,7 +130,7 @@ public sealed class ProductEditorWindow : Window
         }
         catch (Exception ex)
         {
-            MessageBox.Show(ex.Message, "تعذر حفظ الصنف", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(ArabicUi.ErrorMessage(ex, "تعذر حفظ بيانات الصنف. تحقق من البيانات وحاول مرة أخرى."), "تعذر حفظ الصنف", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }
 }

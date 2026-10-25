@@ -99,7 +99,7 @@ public sealed class SupplierStatementWindow : Window
             note.Clear();
             RefreshStatement();
         }
-        catch (Exception ex) { MessageBox.Show(ex.Message, "تعذر تسجيل الدفعة", MessageBoxButton.OK, MessageBoxImage.Warning); }
+        catch (Exception ex) { MessageBox.Show(ArabicUi.ErrorMessage(ex, "تعذر تسجيل الدفعة. تحقق من البيانات وحاول مرة أخرى."), "تعذر تسجيل الدفعة", MessageBoxButton.OK, MessageBoxImage.Warning); }
     }
 
     private void PreviewStatement()

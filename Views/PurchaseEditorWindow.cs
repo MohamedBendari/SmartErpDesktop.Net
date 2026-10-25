@@ -87,7 +87,7 @@ public sealed class PurchaseEditorWindow : Window
             MessageBox.Show($"تم حفظ الفاتورة {purchase.Number}\nالإجمالي: {purchase.Total:N2}\nالمدفوع: {purchase.Paid:N2}\nالمتبقي: {purchase.Remaining:N2}\nالأقساط: {months}\nحالة الاستلام: {purchase.Status}", "تم الحفظ", MessageBoxButton.OK, MessageBoxImage.Information);
             DialogResult = true;
         }
-        catch (Exception ex) { MessageBox.Show(ex.Message, "تعذر حفظ الفاتورة", MessageBoxButton.OK, MessageBoxImage.Warning); }
+        catch (Exception ex) { MessageBox.Show(ArabicUi.ErrorMessage(ex, "تعذر حفظ الفاتورة. تحقق من البيانات وحاول مرة أخرى."), "تعذر حفظ الفاتورة", MessageBoxButton.OK, MessageBoxImage.Warning); }
     }
 
     private static bool Parse(string value, out decimal result) => decimal.TryParse(value, NumberStyles.Number, CultureInfo.CurrentCulture, out result) || decimal.TryParse(value, NumberStyles.Number, CultureInfo.InvariantCulture, out result);

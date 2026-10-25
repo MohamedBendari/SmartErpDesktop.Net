@@ -86,7 +86,7 @@ public sealed class BarcodeLabelWindow : Window
         if (normalized.Length == 0) throw new ArgumentException("رقم الباركود فارغ.", nameof(value));
         foreach (char c in normalized)
             if (!Patterns.ContainsKey(c) || c == '*')
-                throw new ArgumentException($"الرمز '{c}' غير مدعوم في Code 39. استخدم A-Z والأرقام والرموز - . $ / + % والمسافة.", nameof(value));
+                throw new ArgumentException($"الرمز '{c}' غير مدعوم. استخدم الحروف اللاتينية من A إلى Z والأرقام والرموز - . $ / + % والمسافة.", nameof(value));
         string encoded = "*" + normalized + "*";
         const double narrow = 1.2, wide = narrow * 3, gap = narrow, barHeight = 92;
         double x = 12;
@@ -117,11 +117,11 @@ public sealed class BarcodeLabelWindow : Window
             labelBorder.Arrange(new Rect(0, 0, labelBorder.Width, labelBorder.Height));
             labelBorder.UpdateLayout();
             var dialog = new PrintDialog();
-            if (dialog.ShowDialog() == true) dialog.PrintVisual(labelBorder, $"Barcode label - {product.Code}");
+            if (dialog.ShowDialog() == true) dialog.PrintVisual(labelBorder, $"ملصق باركود - {product.Code}");
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            MessageBox.Show("تعذرت طباعة ملصق الباركود:\n" + ex.Message, "خطأ في الطباعة", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show("تعذرت طباعة ملصق الباركود. تحقق من إعدادات الطابعة وحاول مرة أخرى.", "خطأ في الطباعة", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 }

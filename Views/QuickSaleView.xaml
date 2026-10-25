@@ -72,6 +72,7 @@
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="2*"/>
                     <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
@@ -92,7 +93,12 @@
                     </ComboBox>
                 </StackPanel>
 
-                <Button Grid.Column="2"
+                <StackPanel Grid.Column="2" Margin="0,0,10,0">
+                    <TextBlock Text="المندوب" FontWeight="SemiBold"/>
+                    <ComboBox x:Name="RepresentativeBox" DisplayMemberPath="Name"/>
+                </StackPanel>
+
+                <Button Grid.Column="3"
                         Content="إضافة الصنف"
                         Style="{StaticResource PrimaryButton}"
                         VerticalAlignment="Bottom"
@@ -238,6 +244,13 @@
                     <TextBox x:Name="PaidBox"
                              Text="0"
                              TextChanged="Amounts_Changed"/>
+                    <TextBlock Text="طريقة دفع المقدم"
+                               FontWeight="SemiBold"/>
+                    <ComboBox x:Name="InitialPaymentMethodBox" SelectedIndex="0">
+                        <ComboBoxItem Content="نقدي"/>
+                        <ComboBoxItem Content="تحويل"/>
+                        <ComboBoxItem Content="بطاقة"/>
+                    </ComboBox>
                 </StackPanel>
 
                 <!-- الإجمالي النهائي -->

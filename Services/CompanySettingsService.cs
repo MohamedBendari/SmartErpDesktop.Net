@@ -48,6 +48,8 @@ public sealed class CompanySettingsService
                 PaperSize TEXT NOT NULL DEFAULT 'حراري 80 مم',
                 ShowStoreInfo INTEGER NOT NULL DEFAULT 1,
                 ShowPrintPreview INTEGER NOT NULL DEFAULT 1,
+                ShowRepresentativeOnCustomerInvoice INTEGER NOT NULL DEFAULT 1,
+                ShowRepresentativeOnInternalInvoice INTEGER NOT NULL DEFAULT 0,
                 Theme TEXT NOT NULL DEFAULT 'فاتح'
             );
 
@@ -56,6 +58,30 @@ public sealed class CompanySettingsService
             """;
 
         command.ExecuteNonQuery();
+
+        using var columns = connection.CreateCommand();
+        columns.CommandText = "PRAGMA table_info(CompanySettings);";
+        using var reader = columns.ExecuteReader();
+        var hasCustomerRepresentativeSetting = false;
+        var hasInternalRepresentativeSetting = false;
+        while (reader.Read())
+        {
+            if (reader.GetString(1) == "ShowRepresentativeOnCustomerInvoice") hasCustomerRepresentativeSetting = true;
+            if (reader.GetString(1) == "ShowRepresentativeOnInternalInvoice") hasInternalRepresentativeSetting = true;
+        }
+        reader.Close();
+        if (!hasCustomerRepresentativeSetting)
+        {
+            using var alter = connection.CreateCommand();
+            alter.CommandText = "ALTER TABLE CompanySettings ADD COLUMN ShowRepresentativeOnCustomerInvoice INTEGER NOT NULL DEFAULT 1;";
+            alter.ExecuteNonQuery();
+        }
+        if (!hasInternalRepresentativeSetting)
+        {
+            using var alter = connection.CreateCommand();
+            alter.CommandText = "ALTER TABLE CompanySettings ADD COLUMN ShowRepresentativeOnInternalInvoice INTEGER NOT NULL DEFAULT 0;";
+            alter.ExecuteNonQuery();
+        }
     }
 
     public CompanySettings GetSettings()
@@ -68,7 +94,8 @@ public sealed class CompanySettingsService
         command.CommandText = """
             SELECT StoreName, Phone, Address, TaxNumber,
                    PrinterName, PaperSize, ShowStoreInfo,
-                   ShowPrintPreview, Theme
+                   ShowPrintPreview, Theme,
+                   ShowRepresentativeOnCustomerInvoice, ShowRepresentativeOnInternalInvoice
             FROM CompanySettings
             WHERE Id = 1;
             """;
@@ -89,7 +116,9 @@ public sealed class CompanySettingsService
             PaperSize = reader.GetString(5),
             ShowStoreInfo = reader.GetInt32(6) == 1,
             ShowPrintPreview = reader.GetInt32(7) == 1,
-            Theme = reader.GetString(8)
+            Theme = reader.GetString(8),
+            ShowRepresentativeOnCustomerInvoice = reader.GetInt32(9) == 1,
+            ShowRepresentativeOnInternalInvoice = reader.GetInt32(10) == 1
         };
     }
 
@@ -107,12 +136,13 @@ public sealed class CompanySettingsService
             (
                 Id, StoreName, Phone, Address, TaxNumber,
                 PrinterName, PaperSize, ShowStoreInfo,
-                ShowPrintPreview, Theme
+                ShowPrintPreview, Theme, ShowRepresentativeOnCustomerInvoice,
+                ShowRepresentativeOnInternalInvoice
             )
             VALUES
             (
                 1, $name, $phone, $address, $tax,
-                $printer, $paper, $showInfo, $preview, $theme
+                $printer, $paper, $showInfo, $preview, $theme, $showRepCustomer, $showRepInternal
             )
             ON CONFLICT(Id) DO UPDATE SET
                 StoreName = excluded.StoreName,
@@ -123,6 +153,8 @@ public sealed class CompanySettingsService
                 PaperSize = excluded.PaperSize,
                 ShowStoreInfo = excluded.ShowStoreInfo,
                 ShowPrintPreview = excluded.ShowPrintPreview,
+                ShowRepresentativeOnCustomerInvoice = excluded.ShowRepresentativeOnCustomerInvoice,
+                ShowRepresentativeOnInternalInvoice = excluded.ShowRepresentativeOnInternalInvoice,
                 Theme = excluded.Theme;
             """;
 
@@ -134,6 +166,8 @@ public sealed class CompanySettingsService
         command.Parameters.AddWithValue("$paper", settings.PaperSize);
         command.Parameters.AddWithValue("$showInfo", settings.ShowStoreInfo ? 1 : 0);
         command.Parameters.AddWithValue("$preview", settings.ShowPrintPreview ? 1 : 0);
+        command.Parameters.AddWithValue("$showRepCustomer", settings.ShowRepresentativeOnCustomerInvoice ? 1 : 0);
+        command.Parameters.AddWithValue("$showRepInternal", settings.ShowRepresentativeOnInternalInvoice ? 1 : 0);
         command.Parameters.AddWithValue("$theme", settings.Theme);
 
         command.ExecuteNonQuery();

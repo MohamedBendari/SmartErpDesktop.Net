@@ -12,16 +12,19 @@ namespace SmartErpDesktop.Services;
 /// </summary>
 internal static class ErpDataStore
 {
-    private static readonly string DatabasePath = Path.Combine(
+    private static readonly string DefaultDatabasePath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "SmartErpDesktop", "smarterp.db");
 
-    private static readonly string ConnectionString = new SqliteConnectionStringBuilder
+    private static string BuildConnectionString(string? databasePath) => new SqliteConnectionStringBuilder
     {
-        DataSource = DatabasePath,
+        DataSource = string.IsNullOrWhiteSpace(databasePath) ? DefaultDatabasePath : Path.GetFullPath(databasePath),
         Mode = SqliteOpenMode.ReadWriteCreate,
         ForeignKeys = true
     }.ToString();
+
+    private static string ResolveDatabasePath(string? databasePath) =>
+        string.IsNullOrWhiteSpace(databasePath) ? DefaultDatabasePath : Path.GetFullPath(databasePath);
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -32,6 +35,11 @@ internal static class ErpDataStore
     {
         public List<Product> Products { get; set; } = new();
         public List<Customer> Customers { get; set; } = new();
+        public List<Representative> Representatives { get; set; } = new();
+        public List<CommissionRule> CommissionRules { get; set; } = new();
+        public List<CommissionAccrual> CommissionAccruals { get; set; } = new();
+        public List<CommissionApproval> CommissionApprovals { get; set; } = new();
+        public List<RepresentativePayout> RepresentativePayouts { get; set; } = new();
         public List<Invoice> Invoices { get; set; } = new();
         public List<Payment> Payments { get; set; } = new();
         public List<Installment> Installments { get; set; } = new();
@@ -72,6 +80,11 @@ internal static class ErpDataStore
                 SupplierPaymentsJson TEXT NOT NULL DEFAULT '[]',
                 SupplierInstallmentsJson TEXT NOT NULL DEFAULT '[]',
                 PartnersJson TEXT NOT NULL DEFAULT '{}',
+                RepresentativesJson TEXT NOT NULL DEFAULT '[]',
+                CommissionRulesJson TEXT NOT NULL DEFAULT '[]',
+                CommissionAccrualsJson TEXT NOT NULL DEFAULT '[]',
+                CommissionApprovalsJson TEXT NOT NULL DEFAULT '[]',
+                RepresentativePayoutsJson TEXT NOT NULL DEFAULT '[]',
                 UpdatedAt TEXT NOT NULL
             );
             """;
@@ -82,7 +95,12 @@ internal static class ErpDataStore
         var hasSupplierPayments = false;
         var hasSupplierInstallments = false;
         var hasPartners = false;
-        while (reader.Read()) { if (reader.GetString(1) == "SupplierPaymentsJson") hasSupplierPayments = true; if (reader.GetString(1) == "SupplierInstallmentsJson") hasSupplierInstallments = true; if (reader.GetString(1) == "PartnersJson") hasPartners = true; }
+        var hasRepresentatives = false;
+        var hasCommissionRules = false;
+        var hasCommissionAccruals = false;
+        var hasCommissionApprovals = false;
+        var hasRepresentativePayouts = false;
+        while (reader.Read()) { if (reader.GetString(1) == "SupplierPaymentsJson") hasSupplierPayments = true; if (reader.GetString(1) == "SupplierInstallmentsJson") hasSupplierInstallments = true; if (reader.GetString(1) == "PartnersJson") hasPartners = true; if (reader.GetString(1) == "RepresentativesJson") hasRepresentatives = true; if (reader.GetString(1) == "CommissionRulesJson") hasCommissionRules = true; if (reader.GetString(1) == "CommissionAccrualsJson") hasCommissionAccruals = true; if (reader.GetString(1) == "CommissionApprovalsJson") hasCommissionApprovals = true; if (reader.GetString(1) == "RepresentativePayoutsJson") hasRepresentativePayouts = true; }
         reader.Close();
         if (!hasSupplierPayments)
         {
@@ -92,19 +110,25 @@ internal static class ErpDataStore
         }
         if (!hasSupplierInstallments) { using var alter = connection.CreateCommand(); alter.CommandText = "ALTER TABLE ErpOperationalData ADD COLUMN SupplierInstallmentsJson TEXT NOT NULL DEFAULT '[]';"; alter.ExecuteNonQuery(); }
         if (!hasPartners) { using var alter = connection.CreateCommand(); alter.CommandText = "ALTER TABLE ErpOperationalData ADD COLUMN PartnersJson TEXT NOT NULL DEFAULT '{}';"; alter.ExecuteNonQuery(); }
+        if (!hasRepresentatives) { using var alter = connection.CreateCommand(); alter.CommandText = "ALTER TABLE ErpOperationalData ADD COLUMN RepresentativesJson TEXT NOT NULL DEFAULT '[]';"; alter.ExecuteNonQuery(); }
+        if (!hasCommissionRules) { using var alter = connection.CreateCommand(); alter.CommandText = "ALTER TABLE ErpOperationalData ADD COLUMN CommissionRulesJson TEXT NOT NULL DEFAULT '[]';"; alter.ExecuteNonQuery(); }
+        if (!hasCommissionAccruals) { using var alter = connection.CreateCommand(); alter.CommandText = "ALTER TABLE ErpOperationalData ADD COLUMN CommissionAccrualsJson TEXT NOT NULL DEFAULT '[]';"; alter.ExecuteNonQuery(); }
+        if (!hasCommissionApprovals) { using var alter = connection.CreateCommand(); alter.CommandText = "ALTER TABLE ErpOperationalData ADD COLUMN CommissionApprovalsJson TEXT NOT NULL DEFAULT '[]';"; alter.ExecuteNonQuery(); }
+        if (!hasRepresentativePayouts) { using var alter = connection.CreateCommand(); alter.CommandText = "ALTER TABLE ErpOperationalData ADD COLUMN RepresentativePayoutsJson TEXT NOT NULL DEFAULT '[]';"; alter.ExecuteNonQuery(); }
     }
 
-    internal static bool TryLoad(MockErpService service, out State state)
+    internal static bool TryLoad(MockErpService service, out State state, string? databasePath = null)
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(DatabasePath)!);
-        using var connection = new SqliteConnection(ConnectionString);
+        var resolvedPath = ResolveDatabasePath(databasePath);
+        Directory.CreateDirectory(Path.GetDirectoryName(resolvedPath)!);
+        using var connection = new SqliteConnection(BuildConnectionString(resolvedPath));
         connection.Open();
         EnsureSchema(connection);
 
         using var command = connection.CreateCommand();
         command.CommandText = """
             SELECT ProductsJson, CustomersJson, InvoicesJson, PaymentsJson,
-                   InstallmentsJson, SuppliersJson, PurchasesJson, MovementsJson, ExpensesJson, SupplierPaymentsJson, SupplierInstallmentsJson, PartnersJson
+                   InstallmentsJson, SuppliersJson, PurchasesJson, MovementsJson, ExpensesJson, SupplierPaymentsJson, SupplierInstallmentsJson, PartnersJson, RepresentativesJson, CommissionRulesJson, CommissionAccrualsJson, CommissionApprovalsJson, RepresentativePayoutsJson
             FROM ErpOperationalData WHERE Id = 1;
             """;
         using var reader = command.ExecuteReader();
@@ -127,15 +151,21 @@ internal static class ErpDataStore
             Expenses = Deserialize<List<Expense>>(reader.GetString(8)),
             SupplierPayments = Deserialize<List<SupplierPayment>>(reader.GetString(9)),
             SupplierInstallments = Deserialize<List<SupplierInstallment>>(reader.GetString(10)),
-            Partners = Deserialize<PartnerData>(reader.GetString(11))
+            Partners = Deserialize<PartnerData>(reader.GetString(11)),
+            Representatives = Deserialize<List<Representative>>(reader.GetString(12)),
+            CommissionRules = Deserialize<List<CommissionRule>>(reader.GetString(13)),
+            CommissionAccruals = Deserialize<List<CommissionAccrual>>(reader.GetString(14)),
+            CommissionApprovals = Deserialize<List<CommissionApproval>>(reader.GetString(15)),
+            RepresentativePayouts = Deserialize<List<RepresentativePayout>>(reader.GetString(16))
         };
         return true;
     }
 
-    internal static void Save(MockErpService service)
+    internal static void Save(MockErpService service, string? databasePath = null)
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(DatabasePath)!);
-        using var connection = new SqliteConnection(ConnectionString);
+        var resolvedPath = ResolveDatabasePath(databasePath);
+        Directory.CreateDirectory(Path.GetDirectoryName(resolvedPath)!);
+        using var connection = new SqliteConnection(BuildConnectionString(resolvedPath));
         connection.Open();
         EnsureSchema(connection);
         using var transaction = connection.BeginTransaction();
@@ -144,9 +174,9 @@ internal static class ErpDataStore
         command.CommandText = """
             INSERT INTO ErpOperationalData
             (Id, SchemaVersion, ProductsJson, CustomersJson, InvoicesJson, PaymentsJson,
-             InstallmentsJson, SuppliersJson, PurchasesJson, MovementsJson, ExpensesJson, SupplierPaymentsJson, SupplierInstallmentsJson, PartnersJson, UpdatedAt)
-            VALUES (1, 1, $products, $customers, $invoices, $payments, $installments,
-                    $suppliers, $purchases, $movements, $expenses, $supplierPayments, $supplierInstallments, $partners, $updatedAt)
+             InstallmentsJson, SuppliersJson, PurchasesJson, MovementsJson, ExpensesJson, SupplierPaymentsJson, SupplierInstallmentsJson, PartnersJson, RepresentativesJson, CommissionRulesJson, CommissionAccrualsJson, CommissionApprovalsJson, RepresentativePayoutsJson, UpdatedAt)
+            VALUES (1, 4, $products, $customers, $invoices, $payments, $installments,
+                    $suppliers, $purchases, $movements, $expenses, $supplierPayments, $supplierInstallments, $partners, $representatives, $commissionRules, $commissionAccruals, $commissionApprovals, $representativePayouts, $updatedAt)
             ON CONFLICT(Id) DO UPDATE SET
                 SchemaVersion = excluded.SchemaVersion,
                 ProductsJson = excluded.ProductsJson,
@@ -161,6 +191,11 @@ internal static class ErpDataStore
                 SupplierPaymentsJson = excluded.SupplierPaymentsJson,
                 SupplierInstallmentsJson = excluded.SupplierInstallmentsJson,
                 PartnersJson = excluded.PartnersJson,
+                RepresentativesJson = excluded.RepresentativesJson,
+                CommissionRulesJson = excluded.CommissionRulesJson,
+                CommissionAccrualsJson = excluded.CommissionAccrualsJson,
+                CommissionApprovalsJson = excluded.CommissionApprovalsJson,
+                RepresentativePayoutsJson = excluded.RepresentativePayoutsJson,
                 UpdatedAt = excluded.UpdatedAt;
             """;
         command.Parameters.AddWithValue("$products", Serialize(service.Products));
@@ -175,6 +210,11 @@ internal static class ErpDataStore
         command.Parameters.AddWithValue("$supplierPayments", Serialize(service.SupplierPayments));
         command.Parameters.AddWithValue("$supplierInstallments", Serialize(service.SupplierInstallments));
         command.Parameters.AddWithValue("$partners", Serialize(new PartnerData { Partners = service.Partners, Transactions = service.PartnerTransactions, Allocations = service.PartnerAllocations, Settlements = service.PartnerSettlements }));
+        command.Parameters.AddWithValue("$representatives", Serialize(service.Representatives));
+        command.Parameters.AddWithValue("$commissionRules", Serialize(service.CommissionRules));
+        command.Parameters.AddWithValue("$commissionAccruals", Serialize(service.CommissionAccruals));
+        command.Parameters.AddWithValue("$commissionApprovals", Serialize(service.CommissionApprovals));
+        command.Parameters.AddWithValue("$representativePayouts", Serialize(service.RepresentativePayouts));
         command.Parameters.AddWithValue("$updatedAt", DateTimeOffset.Now.ToString("O"));
         command.ExecuteNonQuery();
         transaction.Commit();

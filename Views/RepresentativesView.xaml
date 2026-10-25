@@ -1,0 +1,41 @@
+<UserControl x:Class="SmartErpDesktop.Views.RepresentativesView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             FlowDirection="RightToLeft">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <Border Background="White" CornerRadius="8" Padding="12" Margin="3">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Right">
+                    <TextBlock Text="إدارة المندوبين" FontSize="22" FontWeight="SemiBold"/>
+                    <TextBlock x:Name="SummaryText" Text="" Foreground="#6B778C"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
+                    <TextBox x:Name="FilterBox" Width="250" ToolTip="ابحث بالكود أو الاسم أو الهاتف" KeyDown="FilterBox_KeyDown"/>
+                    <Button Content="بحث / تصفية" Click="Search_Click"/>
+                    <Button Content="تحديث" Background="#45556D" Click="Refresh_Click"/>
+                </StackPanel>
+            </DockPanel>
+        </Border>
+        <Border Grid.Row="1" Background="White" CornerRadius="8" Padding="10" Margin="3">
+            <DataGrid x:Name="RepresentativesGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionMode="Single">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="الكود" Binding="{Binding Code}" Width="*"/>
+                    <DataGridTextColumn Header="الاسم" Binding="{Binding Name}" Width="2*"/>
+                    <DataGridTextColumn Header="الهاتف" Binding="{Binding Phone}" Width="*"/>
+                    <DataGridTextColumn Header="الحالة" Binding="{Binding Status}" Width="*"/>
+                </DataGrid.Columns>
+            </DataGrid>
+        </Border>
+        <WrapPanel Grid.Row="2" Margin="3">
+            <Button Content="إضافة مندوب" Click="Add_Click"/>
+            <Button Content="تعديل بيانات المندوب" Click="Edit_Click"/>
+            <Button Content="عرض التفاصيل" Background="#45556D" Click="Details_Click"/>
+            <Button x:Name="ToggleStatusButton" Content="إيقاف المندوب" Click="ToggleStatus_Click"/>
+        </WrapPanel>
+    </Grid>
+</UserControl>

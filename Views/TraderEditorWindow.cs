@@ -25,6 +25,6 @@ public sealed class TraderEditorWindow : Window
     private void Save_Click(object sender, RoutedEventArgs e)
     {
         try { service.SaveTrader(trader, code.Text, name.Text, phone.Text, address.Text); DialogResult = true; }
-        catch (Exception ex) { MessageBox.Show(ex.Message, "تعذر حفظ بيانات التاجر", MessageBoxButton.OK, MessageBoxImage.Warning); }
+        catch (Exception ex) { MessageBox.Show(ArabicUi.ErrorMessage(ex, "تعذر حفظ بيانات التاجر. تحقق من البيانات وحاول مرة أخرى."), "تعذر حفظ بيانات التاجر", MessageBoxButton.OK, MessageBoxImage.Warning); }
     }
 }

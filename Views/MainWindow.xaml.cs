@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using SmartErpDesktop.Models;
 using SmartErpDesktop.ViewModels;
 
 namespace SmartErpDesktop.Views;
@@ -26,6 +27,7 @@ public partial class MainWindow : Window
             ("QuickSale", "＋  البيع السريع"),
             ("Invoices", "▤  الفواتير"),
             ("Customers", "♙  العملاء والتجار"),
+            ("Representatives", "♙  المندوبون"),
             ("Collections", "ج.م  التحصيل والأقساط"),
             ("Products", "▦  المنتجات والمخزون"),
             ("Purchases", "⇄  المشتريات والموردون"),
@@ -33,6 +35,7 @@ public partial class MainWindow : Window
             ("Expenses", "−  المصاريف"),
             ("Settings", "⚙  الإعدادات")
         };
+        items = items.Append(("CommissionRules", "قواعد العمولات")).ToArray();
 
         foreach (var (key, label) in items)
         {
@@ -84,6 +87,11 @@ public partial class MainWindow : Window
             "QuickSale" => new QuickSaleView(vm.Service, Navigate),
             "Invoices" => new ModuleView("Invoices", vm.Service, Navigate),
             "Customers" => new ModuleView("Customers", vm.Service, Navigate),
+            "Representatives" => new RepresentativesView(vm.Service, OpenRepresentativeDetails),
+            "CommissionRules" => new CommissionRulesView(vm.Service),
+            "RepresentativeDetails" => vm.SelectedRepresentative is { } representative
+                ? new RepresentativeDetailsView(vm.Service, representative, () => Navigate("Representatives"))
+                : new RepresentativesView(vm.Service, OpenRepresentativeDetails),
             "Collections" => new ModuleView("Collections", vm.Service, Navigate),
             "Products" => new ModuleView("Products", vm.Service, Navigate),
             "Purchases" => new ModuleView("Purchases", vm.Service, Navigate),
@@ -95,6 +103,12 @@ public partial class MainWindow : Window
                 "صفحة غير معروفة",
                 "الصفحة المطلوبة غير متاحة.")
         };
+    }
+
+    private void OpenRepresentativeDetails(Representative representative)
+    {
+        vm.SelectedRepresentative = representative;
+        Navigate("RepresentativeDetails");
     }
 
     private void GlobalSearch_Click(object sender, RoutedEventArgs e)

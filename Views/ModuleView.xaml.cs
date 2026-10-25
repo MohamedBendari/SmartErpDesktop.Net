@@ -96,7 +96,7 @@ public partial class ModuleView : UserControl
             LoadData();
             MessageBox.Show(archived ? "للتاجر معاملات مالية؛ تم أرشفته وإخفاؤه من العمليات الجديدة." : "تم حذف التاجر.", "نجاح", MessageBoxButton.OK, MessageBoxImage.Information);
         }
-        catch (Exception ex) { MessageBox.Show(ex.Message, "تعذر حذف التاجر", MessageBoxButton.OK, MessageBoxImage.Warning); }
+        catch (Exception ex) { MessageBox.Show(ArabicUi.ErrorMessage(ex, "تعذر حذف التاجر أو أرشفته."), "تعذر حذف التاجر", MessageBoxButton.OK, MessageBoxImage.Warning); }
     }
     private Product? GetSelectedProduct()
     {
@@ -157,7 +157,7 @@ public partial class ModuleView : UserControl
             LoadData();
             MessageBox.Show($"تم تحديث أسعار {count} صنف/أصناف.", "نجاح", MessageBoxButton.OK, MessageBoxImage.Information);
         }
-        catch (Exception ex) { MessageBox.Show(ex.Message, "تعذر تحديث الأسعار", MessageBoxButton.OK, MessageBoxImage.Warning); }
+        catch (Exception ex) { MessageBox.Show(ArabicUi.ErrorMessage(ex, "تعذر تحديث الأسعار. تحقق من البيانات وحاول مرة أخرى."), "تعذر تحديث الأسعار", MessageBoxButton.OK, MessageBoxImage.Warning); }
     }
     private void Barcode_Click(object sender, RoutedEventArgs e)
     {
@@ -181,7 +181,7 @@ public partial class ModuleView : UserControl
         }
         catch (Exception ex)
         {
-            MessageBox.Show(ex.Message, "تعذر تجهيز الباركود",
+                MessageBox.Show(ArabicUi.ErrorMessage(ex, "تعذر تجهيز ملصق الباركود."), "تعذر تجهيز الباركود",
                 MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }
@@ -250,7 +250,7 @@ public partial class ModuleView : UserControl
     {
         object data = module switch
         {
-            "Invoices" => service.Invoices.Select(i => new { رقم_الفاتورة = i.Number, التاريخ = i.Date.ToString("yyyy/MM/dd HH:mm"), العميل = i.CustomerName, نوع_البيع = i.Type, الإجمالي = i.Total, المدفوع = i.Paid, المتبقي = i.Remaining, الحالة = i.Status }).ToList(),
+            "Invoices" => service.Invoices.Select(i => new { رقم_الفاتورة = i.Number, التاريخ = i.Date.ToString("yyyy/MM/dd HH:mm"), العميل = i.CustomerName, المندوب = string.IsNullOrWhiteSpace(i.RepresentativeName) ? i.RepresentativeCode : i.RepresentativeName, نوع_البيع = i.Type, الإجمالي = i.Total, المدفوع = i.Paid, المتبقي = i.Remaining, الحالة = i.Status }).ToList(),
             "Customers" => service.Customers.Select(c => new { الكود = c.Code, الاسم = c.Name, الهاتف = c.Phone, العنوان = c.Address, النوع = c.Type, الرصيد = c.Balance, نشط = c.IsActive }).ToList(),
             "Collections" => service.Installments.OrderBy(x => x.DueDate).Select(x => new
             {
@@ -270,7 +270,7 @@ public partial class ModuleView : UserControl
             _ => new List<object>()
         };
         if (module == "Purchases" && showingSuppliers)
-            data = service.Suppliers.Where(s => s.IsActive).Select(s => new { Code = s.Code, Name = s.Name, Phone = s.Phone, Address = s.Address, Balance = s.Balance, Active = s.IsActive }).ToList();
+            data = service.Suppliers.Where(s => s.IsActive).Select(s => new { الكود = s.Code, الاسم = s.Name, الهاتف = s.Phone, العنوان = s.Address, الرصيد = s.Balance, نشط = s.IsActive }).ToList();
         source = (IEnumerable)data;
         DataGridMain.ItemsSource = source;
         if (module == "Collections")
@@ -317,7 +317,7 @@ public partial class ModuleView : UserControl
 
     private Supplier? GetSelectedSupplier()
     {
-        var code = DataGridMain.SelectedItem?.GetType().GetProperty("Code")?.GetValue(DataGridMain.SelectedItem)?.ToString();
+        var code = DataGridMain.SelectedItem?.GetType().GetProperty("الكود")?.GetValue(DataGridMain.SelectedItem)?.ToString();
         return service.Suppliers.FirstOrDefault(x => x.Code == code);
     }
     private void SupplierList_Click(object sender, RoutedEventArgs e) { showingSuppliers = !showingSuppliers; SupplierListButton.Content = showingSuppliers ? "عرض المشتريات" : "قائمة الموردين"; LoadData(); }
@@ -394,7 +394,7 @@ public partial class ModuleView : UserControl
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "تعذر إجراء التسوية",
+                MessageBox.Show(ArabicUi.ErrorMessage(ex, "تعذر إجراء التسوية. راجع البيانات وحاول مرة أخرى."), "تعذر إجراء التسوية",
                     MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
@@ -434,7 +434,7 @@ public partial class ModuleView : UserControl
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "تعذر إجراء التسوية",
+                MessageBox.Show(ArabicUi.ErrorMessage(ex, "تعذر إجراء التسوية. راجع البيانات وحاول مرة أخرى."), "تعذر إجراء التسوية",
                     MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
@@ -502,6 +502,9 @@ public partial class ModuleView : UserControl
             var invoice = service.Invoices.FirstOrDefault(i => i.Number == number);
             if (invoice is null) { MessageBox.Show("تعذر تحديد الفاتورة."); return; }
             var rows = invoice.Lines.Select(l => $"{l.ProductName} | الكمية: {l.Quantity:N2} | سعر الوحدة: {l.UnitPrice:N2} | الإجمالي: {l.Total:N2}").ToList();
+            var representativeName = InvoiceReceiptDocument.GetRepresentativeDisplayName(invoice);
+            if (!string.IsNullOrWhiteSpace(representativeName))
+                rows.Add($"المندوب: {representativeName}");
             rows.Insert(0, $"الفاتورة: {invoice.Number} | التاريخ: {invoice.Date:yyyy/MM/dd HH:mm} | العميل/الشركة: {invoice.CustomerName} | النوع: {invoice.Type}");
             rows.Add($"الإجمالي: {invoice.Total:N2} | المدفوع: {invoice.Paid:N2} | المتبقي: {invoice.Remaining:N2}");
             var installments = service.GetInstallments(invoice.Number);
@@ -569,7 +572,7 @@ public partial class ModuleView : UserControl
         catch (Exception ex)
         {
             MessageBox.Show(
-                "تعذر تحميل إعدادات المنشأة من قاعدة البيانات.\n" + ex.Message,
+                ArabicUi.ErrorMessage(ex, "تعذر تحميل إعدادات المنشأة من قاعدة البيانات."),
                 "إعدادات المنشأة", MessageBoxButton.OK, MessageBoxImage.Error);
             return;
         }
@@ -617,7 +620,7 @@ public partial class ModuleView : UserControl
             }
             catch (Exception ex)
             {
-                MessageBox.Show("تعذرت الطباعة:\n" + ex.Message,
+                MessageBox.Show(ArabicUi.ErrorMessage(ex, "تعذرت الطباعة. تحقق من إعدادات الطابعة وحاول مرة أخرى."),
                     "خطأ في الطباعة", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
@@ -664,7 +667,7 @@ public partial class ModuleView : UserControl
     {
         var doc = new FlowDocument { FlowDirection = FlowDirection.RightToLeft, PagePadding = new Thickness(40), ColumnWidth = 700 };
         doc.Blocks.Add(new Paragraph(new Run(HeadingText.Text)) { FontSize = 22, FontWeight = FontWeights.Bold, TextAlignment = TextAlignment.Center });
-        doc.Blocks.Add(new Paragraph(new Run("SMART ERP")) { FontSize = 13, TextAlignment = TextAlignment.Center });
+        doc.Blocks.Add(new Paragraph(new Run("سمارت لإدارة الأعمال")) { FontSize = 13, TextAlignment = TextAlignment.Center });
         foreach (var property in selected.GetType().GetProperties())
         {
             var value = property.GetValue(selected);

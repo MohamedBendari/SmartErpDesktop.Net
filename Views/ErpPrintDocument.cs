@@ -44,7 +44,7 @@ internal static class ErpPrintDocument
     /// <summary>Professional A4 invoice — used for Details/Preview AND Print.</summary>
     internal static FlowDocument CreateInvoiceDocument(
         Invoice invoice, Customer? customer, CompanySettings settings,
-        IReadOnlyList<Installment> installments)
+        IReadOnlyList<Installment> installments, string? representativeName = null)
     {
         bool thermal58 = settings.PaperSize.Contains("58");
         bool a4        = settings.PaperSize.Equals("A4", StringComparison.OrdinalIgnoreCase);
@@ -78,6 +78,8 @@ internal static class ErpPrintDocument
         {
             AddMetaRow(meta, fs, "العميل", invoice.CustomerName, "", "");
         }
+        if (!string.IsNullOrWhiteSpace(representativeName))
+            AddMetaRow(meta, fs, "المندوب", representativeName, "", "");
 
         // ── Products table ────────────────────────────────────────────────────
         AddSectionHeading(doc, "بنود الفاتورة", fs);
@@ -174,7 +176,7 @@ internal static class ErpPrintDocument
     internal static FlowDocument CreatePreviewInvoice(
         IReadOnlyList<InvoiceLine> cart, string saleType, Customer? customer,
         decimal discountPercent, decimal fixedDiscount, decimal paid,
-        CompanySettings settings)
+        CompanySettings settings, string? representativeName = null)
     {
         bool thermal58 = settings.PaperSize.Contains("58");
         bool a4        = settings.PaperSize.Equals("A4", StringComparison.OrdinalIgnoreCase);
@@ -196,6 +198,11 @@ internal static class ErpPrintDocument
             AddMetaRow(meta, fs, "كود العميل", customer.Code, "اسم العميل", customer.Name);
             if (!string.IsNullOrWhiteSpace(customer.Phone))
                 AddMetaRow(meta, fs, "هاتف العميل", customer.Phone, "", "");
+        }
+        if (!string.IsNullOrWhiteSpace(representativeName) && InvoiceReceiptDocument.ShouldShowRepresentative(saleType, settings))
+        {
+            var representativeMeta = MetaTable(doc);
+            AddMetaRow(representativeMeta, fs, "المندوب", representativeName, "", "");
         }
 
         AddSectionHeading(doc, "بنود الفاتورة", fs);
@@ -806,7 +813,7 @@ internal static class ErpPrintDocument
         }
         catch (Exception ex)
         {
-            MessageBox.Show("تعذرت الطباعة:\n" + ex.Message, "خطأ في الطباعة", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(ArabicUi.ErrorMessage(ex, "تعذرت الطباعة. تحقق من إعدادات الطابعة وحاول مرة أخرى."), "خطأ في الطباعة", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 }

@@ -57,7 +57,7 @@ public partial class SettingsView : UserControl
             StatusText.Text = "تعذر تحميل الإعدادات.";
 
             MessageBox.Show(
-                "تعذر تحميل الإعدادات:\n" + ex.Message,
+                ArabicUi.ErrorMessage(ex, "تعذر تحميل الإعدادات من قاعدة البيانات."),
                 "خطأ",
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
@@ -77,6 +77,8 @@ public partial class SettingsView : UserControl
 
         ShowStoreInfoCheck.IsChecked = settings.ShowStoreInfo;
         ShowPrintPreviewCheck.IsChecked = settings.ShowPrintPreview;
+        ShowRepresentativeCustomerInvoiceCheck.IsChecked = settings.ShowRepresentativeOnCustomerInvoice;
+        ShowRepresentativeInternalInvoiceCheck.IsChecked = settings.ShowRepresentativeOnInternalInvoice;
     }
 
     private static void SelectCombo(ComboBox combo, string value)
@@ -84,7 +86,7 @@ public partial class SettingsView : UserControl
         foreach (ComboBoxItem item in combo.Items)
         {
             if (string.Equals(
-                item.Content?.ToString(),
+                item.Tag?.ToString() ?? item.Content?.ToString(),
                 value,
                 StringComparison.OrdinalIgnoreCase))
             {
@@ -110,14 +112,16 @@ public partial class SettingsView : UserControl
 
             PaperSize =
                 (PaperSizeBox.SelectedItem as ComboBoxItem)?
-                .Content?.ToString() ?? "حراري 80 مم",
+                .Tag?.ToString() ?? (PaperSizeBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "حراري 80 مم",
 
             Theme =
                 (ThemeBox.SelectedItem as ComboBoxItem)?
                 .Content?.ToString() ?? "فاتح",
 
             ShowStoreInfo = ShowStoreInfoCheck.IsChecked == true,
-            ShowPrintPreview = ShowPrintPreviewCheck.IsChecked == true
+            ShowPrintPreview = ShowPrintPreviewCheck.IsChecked == true,
+            ShowRepresentativeOnCustomerInvoice = ShowRepresentativeCustomerInvoiceCheck.IsChecked == true,
+            ShowRepresentativeOnInternalInvoice = ShowRepresentativeInternalInvoiceCheck.IsChecked == true
         };
     }
 
@@ -147,7 +151,7 @@ public partial class SettingsView : UserControl
             StatusText.Text = "فشل حفظ الإعدادات.";
 
             MessageBox.Show(
-                "تعذر حفظ الإعدادات:\n" + ex.Message,
+                ArabicUi.ErrorMessage(ex, "تعذر حفظ الإعدادات. حاول مرة أخرى."),
                 "خطأ في الحفظ",
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
@@ -159,9 +163,9 @@ public partial class SettingsView : UserControl
     {
         var dialog = new SaveFileDialog
         {
-            Title = "حفظ نسخة احتياطية من SMART ERP",
-            Filter = "SQLite Backup (*.db)|*.db|All files (*.*)|*.*",
-            FileName = $"SMART-ERP-Backup-{DateTime.Now:yyyyMMdd-HHmmss}.db",
+            Title = "حفظ نسخة احتياطية من سمارت لإدارة الأعمال",
+            Filter = "نسخ قاعدة البيانات (*.db)|*.db|كل الملفات (*.*)|*.*",
+            FileName = $"نسخة-احتياطية-{DateTime.Now:yyyyMMdd-HHmmss}.db",
             AddExtension = true,
             DefaultExt = ".db"
         };
@@ -175,7 +179,7 @@ public partial class SettingsView : UserControl
         }
         catch (Exception ex)
         {
-            MessageBox.Show("تعذر إنشاء النسخة الاحتياطية:\n" + ex.Message, "خطأ", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(ArabicUi.ErrorMessage(ex, "تعذر إنشاء النسخة الاحتياطية. تحقق من صلاحيات المجلد وحاول مرة أخرى."), "خطأ", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 
@@ -183,8 +187,8 @@ public partial class SettingsView : UserControl
     {
         var dialog = new OpenFileDialog
         {
-            Title = "اختيار نسخة SMART ERP لاستعادتها",
-            Filter = "SQLite Backup (*.db)|*.db|All files (*.*)|*.*",
+            Title = "اختيار نسخة احتياطية لاستعادتها",
+            Filter = "نسخ قاعدة البيانات (*.db)|*.db|كل الملفات (*.*)|*.*",
             CheckFileExists = true
         };
         if (dialog.ShowDialog() != true) return;
@@ -197,12 +201,12 @@ public partial class SettingsView : UserControl
             // The application should be restarted after restore so in-memory lists reload from SQLite.
             new BackupService().RestoreBackup(dialog.FileName);
             StatusText.Text = "تمت الاستعادة. أغلق البرنامج وافتحه مرة أخرى.";
-            MessageBox.Show("تمت استعادة قاعدة البيانات. أغلق SMART ERP وافتحه مرة أخرى حتى تُحمّل البيانات المستعادة.",
+            MessageBox.Show("تمت استعادة قاعدة البيانات. أغلق البرنامج وافتحه مرة أخرى حتى تُحمّل البيانات المستعادة.",
                 "تمت الاستعادة", MessageBoxButton.OK, MessageBoxImage.Information);
         }
         catch (Exception ex)
         {
-            MessageBox.Show("تعذر استعادة النسخة الاحتياطية:\n" + ex.Message, "خطأ", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(ArabicUi.ErrorMessage(ex, "تعذر استعادة النسخة الاحتياطية. تحقق من الملف وحاول مرة أخرى."), "خطأ", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 
