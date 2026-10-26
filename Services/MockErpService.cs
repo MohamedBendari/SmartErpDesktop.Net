@@ -1165,6 +1165,7 @@ public sealed class MockErpService
                         ReceiptNumber = $"REC-{++receiptSequence}",
                         Date = invoice.Date,
                         CustomerName = invoice.CustomerName,
+                        CustomerCode = invoice.CustomerCode,
                         Amount = paid,
                         Method = initialPaymentMethod.Trim(),
                         BalanceBefore = customerBalanceBefore.GetValueOrDefault() + invoice.Total,
@@ -1244,6 +1245,40 @@ public sealed class MockErpService
         .OrderBy(x => x.Sequence)
         .ToList();
 
+    /// <summary>Returns sales linked to a party by stable code, with an unambiguous name fallback for legacy invoices.</summary>
+    public IReadOnlyList<Invoice> GetCustomerInvoices(Customer customer)
+    {
+        ArgumentNullException.ThrowIfNull(customer);
+        var legacyNameIsUnique = Customers.Count(x => x.Name.Equals(customer.Name, StringComparison.OrdinalIgnoreCase)) == 1;
+        return Invoices.Where(invoice =>
+                !string.IsNullOrWhiteSpace(invoice.CustomerCode)
+                    ? invoice.CustomerCode.Equals(customer.Code, StringComparison.OrdinalIgnoreCase)
+                    : legacyNameIsUnique && invoice.CustomerName.Equals(customer.Name, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(x => x.Date).ThenBy(x => x.Number, StringComparer.Ordinal).ToList();
+    }
+
+    /// <summary>Returns each payment once if it belongs to the party or is allocated to one of its invoices.</summary>
+    public IReadOnlyList<Payment> GetCustomerPayments(Customer customer)
+    {
+        ArgumentNullException.ThrowIfNull(customer);
+        var invoiceNumbers = GetCustomerInvoices(customer).Select(x => x.Number).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var legacyNameIsUnique = Customers.Count(x => x.Name.Equals(customer.Name, StringComparison.OrdinalIgnoreCase)) == 1;
+        return Payments.Where(payment => !string.IsNullOrWhiteSpace(payment.CustomerCode)
+                ? payment.CustomerCode.Equals(customer.Code, StringComparison.OrdinalIgnoreCase)
+                : payment.Allocations.Any(allocation => invoiceNumbers.Contains(allocation.InvoiceNumber)) ||
+                  (legacyNameIsUnique && payment.CustomerName.Equals(customer.Name, StringComparison.OrdinalIgnoreCase)))
+            .OrderByDescending(x => x.Date).ThenBy(x => x.ReceiptNumber, StringComparer.Ordinal).ToList();
+    }
+
+    /// <summary>Collections for one invoice; payment-to-installment details are included only when explicitly stored.</summary>
+    public IReadOnlyList<Payment> GetPaymentsForInvoice(string invoiceNumber) => Payments
+        .Where(payment => payment.Allocations.Any(allocation => allocation.InvoiceNumber.Equals(invoiceNumber, StringComparison.OrdinalIgnoreCase)) ||
+                          (payment.SourceType == PaymentSourceType.InvoiceInitialPayment &&
+                           payment.SourceId.Equals(GetInvoiceInitialPaymentSourceId(invoiceNumber), StringComparison.Ordinal)) ||
+                          Installments.Any(installment => installment.InvoiceNumber.Equals(invoiceNumber, StringComparison.OrdinalIgnoreCase) &&
+                              installment.Id.Equals(payment.InstallmentId, StringComparison.Ordinal)))
+        .OrderBy(x => x.Date).ThenBy(x => x.ReceiptNumber, StringComparer.Ordinal).ToList();
+
     public Payment CollectForInstallment(Installment installment, decimal amount, string method, string note)
     {
         ArgumentNullException.ThrowIfNull(installment);
@@ -1258,7 +1293,11 @@ public sealed class MockErpService
         var invoice = Invoices.FirstOrDefault(x => x.Number.Equals(installment.InvoiceNumber, StringComparison.OrdinalIgnoreCase));
         if (invoice is null)
             throw new InvalidOperationException("لم يتم العثور على الفاتورة المرتبطة بالقسط.");
-        var customer = Customers.FirstOrDefault(x => x.Name.Equals(installment.CustomerName, StringComparison.OrdinalIgnoreCase));
+        var customer = !string.IsNullOrWhiteSpace(invoice.CustomerCode)
+            ? Customers.FirstOrDefault(x => x.Code.Equals(invoice.CustomerCode, StringComparison.OrdinalIgnoreCase))
+            : Customers.Where(x => x.Name.Equals(installment.CustomerName, StringComparison.OrdinalIgnoreCase)).Take(2).ToList() is { Count: 1 } legacyMatches
+                ? legacyMatches[0]
+                : null;
         if (customer is null)
             throw new InvalidOperationException("لم يتم العثور على العميل المرتبط بالقسط.");
         if (amount > customer.Balance)
@@ -1280,6 +1319,8 @@ public sealed class MockErpService
             ReceiptNumber = $"REC-{++receiptSequence}",
             Date = DateTime.Now,
             CustomerName = customer.Name,
+            CustomerCode = customer.Code,
+            InstallmentId = installment.Id,
             Amount = amount,
             Method = method,
             BalanceBefore = before,
@@ -1377,6 +1418,7 @@ public sealed class MockErpService
             ReceiptNumber = $"REC-{++receiptSequence}",
             Date = DateTime.Now,
             CustomerName = customer.Name,
+            CustomerCode = customer.Code,
             Amount = amount,
             Method = method,
             BalanceBefore = before,

@@ -90,6 +90,10 @@ public sealed class Payment
     public DateTime? UpdatedAt { get; private set; }
 
     public string CustomerName { get; set; } = "";
+    // Optional for backwards compatibility with payment snapshots saved before customer identity was persisted.
+    public string CustomerCode { get; set; } = "";
+    // Present only for collections explicitly made against one schedule row.
+    public string InstallmentId { get; set; } = "";
     public decimal Amount { get; set; }
     public string Method { get; set; } = "نقدي";
     public decimal BalanceBefore { get; set; }

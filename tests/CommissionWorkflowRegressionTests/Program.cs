@@ -21,6 +21,7 @@ internal static class Program
 
         try
         {
+            RunCustomerHistoryChecks();
             var service = new MockErpService(databasePath);
             var representative = new Representative { Code = RepresentativeCode, Name = "Regression, \"Rep\"\nمندوب", IsActive = true };
             var customer = new Customer { Code = "REGRESSION-CUSTOMER", Name = "Regression Customer", Type = "فرد" };
@@ -56,7 +57,7 @@ internal static class Program
             var reportPayout = GetField<TextBox>(reportView, "payout");
             Check(ReportRowCount(reportGrid) == 2, "commission report initially includes both saved accrual rows");
             reportInvoice.Text = "no-such-invoice";
-            Check(ReportRowCount(reportGrid) == 0 && GetField<TextBlock>(reportView, "totals").Text.Contains("Accruals 0"), "invoice filter and totals handle empty results");
+            Check(ReportRowCount(reportGrid) == 0 && GetField<TextBlock>(reportView, "totals").Text.Contains("عدد الاستحقاقات: 0"), "invoice filter and totals handle empty results");
             var emptyCsv = (string)(typeof(CommissionReportView).GetMethod("BuildCsv", BindingFlags.Instance | BindingFlags.NonPublic)?.Invoke(reportView, null)
                 ?? throw new InvalidOperationException("Commission CSV builder was not found."));
             Check(ParseCsv(emptyCsv)[^1][19] == "0", "empty filtered CSV emits zero totals and counts");
@@ -79,8 +80,8 @@ internal static class Program
             var csvRows = ParseCsv(csv);
             var csvTotals = csvRows[^1];
             Check(csvRows[1][1] == representative.Name, "CSV correctly escapes quotes, commas, embedded newlines, and Arabic text");
-            Check(csvTotals[9] == "400" && csvTotals[10] == "10" && csvTotals[11] == "0" && csvTotals[12] == "10" &&
-                  csvTotals[16] == "0" && csvTotals[18] == "0" && csvTotals[19] == "2" && csvTotals[20] == "0" && csvTotals[21] == "0",
+            Check(decimal.Parse(csvTotals[9], System.Globalization.CultureInfo.InvariantCulture) == 400m && decimal.Parse(csvTotals[10], System.Globalization.CultureInfo.InvariantCulture) == 10m && decimal.Parse(csvTotals[11], System.Globalization.CultureInfo.InvariantCulture) == 0m && decimal.Parse(csvTotals[12], System.Globalization.CultureInfo.InvariantCulture) == 10m &&
+                  decimal.Parse(csvTotals[16], System.Globalization.CultureInfo.InvariantCulture) == 0m && decimal.Parse(csvTotals[18], System.Globalization.CultureInfo.InvariantCulture) == 0m && csvTotals[19] == "2" && csvTotals[20] == "0" && csvTotals[21] == "0",
                 "CSV totals match the filtered screen summary and record counts");
 
             service.ApproveCommissionAccruals(new[] { accruals[0].Id }, "regression approver");
@@ -132,6 +133,9 @@ internal static class Program
                   finalSummary.ApprovalCount == 2 && finalSummary.PayoutReceiptCount == 2,
                 "shared summary reconciles multiple payout receipts across multiple accruals");
 
+            // The service call above bypasses the payout dialog's refresh callback. Move away and
+            // back so the tab's SelectionChanged refresh runs, as it does during normal navigation.
+            tabs.SelectedIndex = 5;
             tabs.SelectedIndex = 6;
             tabs.SelectedItem = accountTab;
             account = ReadAccountRows(accountTab);
@@ -145,6 +149,11 @@ internal static class Program
             var reloaded = new MockErpService(databasePath);
             Check(reloaded.CommissionApprovals.Count == 2 && reloaded.RepresentativePayouts.Count == 2 && reloaded.RepresentativePayouts.Sum(x => x.Allocations.Sum(a => a.Amount)) == 8m,
                 "approval and payout allocation records persist and reload without duplication");
+            var reloadedDetails = new RepresentativeDetailsView(reloaded, reloaded.Representatives.Single(x => x.Code == RepresentativeCode), () => { });
+            var reloadedAccountTab = (TabItem)Descendants<TabControl>(reloadedDetails).Single().Items[6];
+            var reloadedAccount = ReadAccountRows(reloadedAccountTab);
+            Check(reloadedAccount.AccrualRows.Count(x => x.Status == "مدفوعة") == 1 && reloadedAccount.AccrualRows.Count(x => x.Status == "مدفوعة جزئياً") == 1,
+                "reloaded account statement derives paid and partially paid states from persisted payout allocations");
             Check(reloaded.Invoices.Single(x => x.Number == invoice.Number).Paid == 400m && reloaded.Payments.Sum(x => x.Amount) == 400m,
                 "commission workflow leaves customer invoice and payment totals unchanged");
 
@@ -179,6 +188,95 @@ internal static class Program
         }
     }
 
+    private static void RunCustomerHistoryChecks()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), "SmartErpCustomerHistory-" + Guid.NewGuid().ToString("N"), "test.db");
+        var service = new MockErpService(databasePath);
+        var customer = new Customer { Code = "HISTORY-CUSTOMER", Name = "History Customer", Type = "فرد", Balance = 2000m };
+        service.Customers.Add(customer);
+        var product = service.Products.Single(x => x.Code == "P-1001");
+        Invoice NewInstallmentSale(decimal total, decimal down, params decimal[] dues) => service.SaveSale(
+            new List<InvoiceLine> { new() { ProductCode = product.Code, ProductName = product.Name, Quantity = 1, UnitPrice = total } },
+            service.CommissionSaleTypes[1], customer, down, 0m, installmentMonths: dues.Length,
+            schedule: dues.Select((due, index) => new Installment { DueDate = DateTime.Today.AddMonths(index + 1), Amount = due }).ToList());
+        var invoiceA = NewInstallmentSale(300m, 100m, 100m, 100m);
+        var invoiceB = NewInstallmentSale(400m, 100m, 150m, 150m);
+        var cashA = service.SaveSale(new List<InvoiceLine> { new() { ProductCode = product.Code, ProductName = product.Name, Quantity = 1, UnitPrice = 50m } }, "كاش", customer, 50m, 0m);
+        var cashB = service.SaveSale(new List<InvoiceLine> { new() { ProductCode = product.Code, ProductName = product.Name, Quantity = 1, UnitPrice = 60m } }, "كاش", customer, 60m, 0m);
+        var installmentsA = service.GetInstallments(invoiceA.Number);
+        var installmentsB = service.GetInstallments(invoiceB.Number);
+        Check(installmentsA.Count == 2 && installmentsB.Count == 2 && installmentsA.All(x => x.InvoiceNumber == invoiceA.Number) && installmentsB.All(x => x.InvoiceNumber == invoiceB.Number),
+            "each installment sale returns only its own invoice schedule");
+        installmentsA[1].DueDate = DateTime.Today.AddDays(-1);
+        service.SaveChanges();
+        var paymentA = service.CollectForInstallment(installmentsA[1], 50m, "نقدي", "invoice A installment");
+        var paymentB = service.CollectForInstallment(installmentsB[0], 75m, "نقدي", "invoice B installment");
+        service.CollectForInstallment(installmentsB[0], 75m, "نقدي", "complete invoice B installment");
+        Check(paymentA.InstallmentId == installmentsA[1].Id && paymentB.InstallmentId == installmentsB[0].Id &&
+              service.GetPaymentsForInvoice(invoiceA.Number).All(x => x.Allocations.Any(a => a.InvoiceNumber == invoiceA.Number)) &&
+              service.GetPaymentsForInvoice(invoiceB.Number).All(x => x.Allocations.Any(a => a.InvoiceNumber == invoiceB.Number)) &&
+              installmentsA[1].Status == "متأخر" && installmentsA[1].PaidAmount == 50m && installmentsB[0].Status == "مسدد",
+            "installment receipts retain invoice and installment links and reflect overdue, partial, and paid states");
+        Check(service.GetInstallments(cashA.Number).Count == 0,
+            "cash invoices do not expose an installment schedule");
+
+        var legacyScheduleInvoice = new Invoice { Number = "LEGACY-SCHEDULE", CustomerName = customer.Name, Type = "قسط أفراد", Total = 100m };
+        service.Invoices.Add(legacyScheduleInvoice);
+        service.Installments.Add(new Installment { InvoiceNumber = legacyScheduleInvoice.Number, Sequence = 1, DueDate = DateTime.Today.AddMonths(1), Amount = 100m });
+        service.Payments.Add(new Payment
+        {
+            ReceiptNumber = "LEGACY-SCHEDULE-PAYMENT",
+            CustomerName = customer.Name,
+            Amount = 25m,
+            InstallmentId = "missing-legacy-installment-id",
+            Allocations = { new PaymentAllocation { InvoiceNumber = legacyScheduleInvoice.Number, Amount = 25m } }
+        });
+        Check(service.GetInstallments(legacyScheduleInvoice.Number).Count == 1 && service.GetPaymentsForInvoice(legacyScheduleInvoice.Number).Single().InstallmentId == "missing-legacy-installment-id",
+            "incomplete legacy schedule and payment links remain readable without being reassigned");
+
+        var historyWindow = new CustomerTransactionHistoryWindow(service, customer);
+        var historyGrid = GetField<DataGrid>(historyWindow, "historyGrid");
+        var scheduleGrid = GetField<DataGrid>(historyWindow, "scheduleGrid");
+        var paymentGrid = GetField<DataGrid>(historyWindow, "invoicePaymentsGrid");
+        historyGrid.SelectedItem = ((IEnumerable)historyGrid.ItemsSource!).Cast<object>()
+            .Single(row => GetProperty(row, "Invoice") is not null && string.Equals(GetProperty(row, "Reference")?.ToString(), invoiceA.Number, StringComparison.Ordinal));
+        InvokePrivate(historyWindow, "ShowSelectedSchedule");
+        var displayedInstallments = ((IEnumerable)scheduleGrid.ItemsSource!).Cast<object>().ToList();
+        var displayedReceipts = ((IEnumerable)paymentGrid.ItemsSource!).Cast<object>()
+            .Select(row => GetProperty(row, "الإيصال")?.ToString()).ToList();
+        Check(displayedInstallments.Count == 2 && displayedReceipts.Contains(paymentA.ReceiptNumber) && !displayedReceipts.Contains(paymentB.ReceiptNumber),
+            "transaction-history schedule button displays only the selected invoice's installments and payments");
+        InvokePrivate(historyWindow, "ReturnToHistory");
+        InvokePrivate(historyWindow, "ShowSelectedSchedule");
+        Check(((IEnumerable)scheduleGrid.ItemsSource!).Cast<object>().Count() == 2,
+            "installment schedule can be opened, closed, and opened again without UI initialization errors");
+        InvokePrivate(historyWindow, "ReturnToHistory");
+        historyGrid.SelectedItem = ((IEnumerable)historyGrid.ItemsSource!).Cast<object>()
+            .Single(row => GetProperty(row, "Invoice") is not null && string.Equals(GetProperty(row, "Reference")?.ToString(), legacyScheduleInvoice.Number, StringComparison.Ordinal));
+        InvokePrivate(historyWindow, "ShowSelectedSchedule");
+        var legacyPaymentRow = ((IEnumerable)paymentGrid.ItemsSource!).Cast<object>().Single();
+        Check(GetProperty(legacyPaymentRow, "القسط_المحدد")?.ToString() == "—",
+            "legacy payment with a missing installment link is shown as unassigned instead of being attached to another installment");
+        Check(service.GetCustomerInvoices(customer).Count == 5 && service.GetCustomerInvoices(customer).Any(x => x.Number == cashA.Number) && service.GetCustomerInvoices(customer).Any(x => x.Number == cashB.Number),
+            "history includes multiple cash and installment invoices for one stable customer code");
+        customer.Name = "History Customer Renamed";
+        service.SaveChanges();
+        Check(service.GetCustomerInvoices(customer).Count == 4 && service.GetCustomerPayments(customer).Any(x => x.ReceiptNumber == paymentA.ReceiptNumber),
+            "history follows stable customer code after display-name changes");
+        var emptyCustomer = new Customer { Code = "EMPTY-HISTORY", Name = "No transactions" };
+        Check(service.GetCustomerInvoices(emptyCustomer).Count == 0 && service.GetCustomerPayments(emptyCustomer).Count == 0,
+            "customers without transactions return an empty history");
+        var reloaded = new MockErpService(databasePath);
+        Check(reloaded.Payments.Single(x => x.ReceiptNumber == paymentA.ReceiptNumber).InstallmentId == installmentsA[1].Id && reloaded.GetInstallments(invoiceA.Number).Count == 2,
+            "customer identity and installment links reload from disposable SQLite data");
+        var legacyPayment = System.Text.Json.JsonSerializer.Deserialize<Payment>("{\"ReceiptNumber\":\"OLD\",\"CustomerName\":\"History Customer\",\"Amount\":10}");
+        Check(legacyPayment is { CustomerCode: "", InstallmentId: "", Amount: 10m }, "legacy JSON payments without optional identifiers remain readable");
+        var legacyCustomer = new Customer { Code = "LEGACY-HISTORY", Name = "Legacy History Name" };
+        service.Customers.Add(legacyCustomer);
+        service.Invoices.Add(new Invoice { Number = "LEGACY-INVOICE", CustomerName = legacyCustomer.Name, Total = 25m, Paid = 25m });
+        Check(service.GetCustomerInvoices(legacyCustomer).Single().Number == "LEGACY-INVOICE", "legacy name-linked invoices remain discoverable when the customer name is unambiguous");
+    }
+
     private static (List<(string Status, decimal Earned)> AccrualRows, List<decimal> PayoutRows, string Summary) ReadAccountRows(TabItem accountTab)
     {
         var grids = Descendants<DataGrid>(accountTab).ToList();
@@ -194,6 +292,18 @@ internal static class Program
 
     private static object? GetProperty(object instance, string name) =>
         instance.GetType().GetProperty(name, BindingFlags.Instance | BindingFlags.Public)?.GetValue(instance);
+
+    private static void InvokePrivate(object instance, string methodName)
+    {
+        try
+        {
+            instance.GetType().GetMethod(methodName, BindingFlags.Instance | BindingFlags.NonPublic)?.Invoke(instance, null);
+        }
+        catch (TargetInvocationException exception) when (exception.InnerException is not null)
+        {
+            throw exception.InnerException;
+        }
+    }
 
     private static T GetField<T>(object instance, string name) where T : class =>
         (T)(instance.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(instance)

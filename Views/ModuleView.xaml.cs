@@ -63,6 +63,7 @@ public partial class ModuleView : UserControl
         if (key == "Customers")
         {
             AddTraderButton.Visibility = EditTraderButton.Visibility = DeleteTraderButton.Visibility = Visibility.Visible;
+            CustomerHistoryButton.Visibility = Visibility.Visible;
         }
         LoadData();
     }
@@ -484,9 +485,9 @@ public partial class ModuleView : UserControl
         {
             var code = DataGridMain.SelectedItem.GetType().GetProperty("الكود")?.GetValue(DataGridMain.SelectedItem)?.ToString();
             var name = DataGridMain.SelectedItem.GetType().GetProperty("الاسم")?.GetValue(DataGridMain.SelectedItem)?.ToString();
-            var customer = service.Customers.FirstOrDefault(c =>
-                (!string.IsNullOrWhiteSpace(code) && c.Code == code) ||
-                (!string.IsNullOrWhiteSpace(name) && c.Name == name));
+            var customer = !string.IsNullOrWhiteSpace(code)
+                ? service.Customers.FirstOrDefault(c => c.Code.Equals(code, StringComparison.OrdinalIgnoreCase))
+                : service.Customers.FirstOrDefault(c => c.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
             if (customer is null)
             {
                 MessageBox.Show("تعذر تحديد العميل من السجل المحدد.", "كشف حساب العميل");
@@ -520,6 +521,14 @@ public partial class ModuleView : UserControl
         var details = string.Join("\n", DataGridMain.SelectedItem.GetType().GetProperties()
             .Select(property => $"{property.Name}: {property.GetValue(DataGridMain.SelectedItem)}"));
         MessageBox.Show(details, "تفاصيل السجل");
+    }
+
+    private void CustomerHistory_Click(object sender, RoutedEventArgs e)
+    {
+        var code = DataGridMain.SelectedItem?.GetType().GetProperty("الكود")?.GetValue(DataGridMain.SelectedItem)?.ToString();
+        var customer = string.IsNullOrWhiteSpace(code) ? null : service.Customers.FirstOrDefault(c => c.Code.Equals(code, StringComparison.OrdinalIgnoreCase));
+        if (customer is null) { MessageBox.Show("حدد عميلاً أو شركة من القائمة.", "سجل المعاملات", MessageBoxButton.OK, MessageBoxImage.Information); return; }
+        new CustomerTransactionHistoryWindow(service, customer) { Owner = Window.GetWindow(this) }.ShowDialog();
     }
     private void InvoiceInstallments_Click(object sender, RoutedEventArgs e)
     {

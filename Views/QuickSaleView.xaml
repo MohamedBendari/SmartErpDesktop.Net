@@ -221,7 +221,7 @@
 
                 <!-- الخصم النسبي -->
                 <StackPanel Grid.Column="1" Margin="4,0">
-                    <TextBlock Text="خصم %"
+                    <TextBlock Text="نسبة %"
                                FontWeight="SemiBold"/>
                     <TextBox x:Name="DiscountPercentBox"
                              Text="0"
@@ -230,7 +230,7 @@
 
                 <!-- الخصم الثابت -->
                 <StackPanel Grid.Column="2" Margin="4,0">
-                    <TextBlock Text="خصم ثابت"
+                    <TextBlock Text="خصم "
                                FontWeight="SemiBold"/>
                     <TextBox x:Name="InvoiceDiscountBox"
                              Text="0"
@@ -239,7 +239,7 @@
 
                 <!-- المبلغ المدفوع -->
                 <StackPanel Grid.Column="3" Margin="4,0">
-                    <TextBlock Text="المبلغ المدفوع"
+                    <TextBlock Text="مبلغ مقد"
                                FontWeight="SemiBold"/>
                     <TextBox x:Name="PaidBox"
                              Text="0"
@@ -265,22 +265,22 @@
 
                     <StackPanel>
                         <TextBlock Text="الإجمالي النهائي قبل البيع"
-                                   FontSize="13"
+                                   FontSize="10"
                                    FontWeight="SemiBold"
                                    Foreground="#1E40AF"
                                    Margin="0,0,0,4"/>
 
                         <TextBlock x:Name="FinalTotalText"
                                    Text="0.00 ج.م"
-                                   FontSize="25"
+                                   FontSize="15"
                                    FontWeight="Bold"
                                    Foreground="#174EA6"
                                    Margin="0,2,0,5"/>
 
                         <TextBlock x:Name="TotalsText"
                                    Text="المتبقي: 0.00 ج.م"
-                                   FontSize="12"
-                                   Foreground="#334155"
+                                   FontSize="15"
+                                   Foreground="Red"
                                    TextWrapping="Wrap"/>
                     </StackPanel>
                 </Border>

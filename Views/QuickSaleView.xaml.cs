@@ -104,7 +104,7 @@ public partial class QuickSaleView : UserControl
         var discount = Num(InvoiceDiscountBox);
         var percent = Num(DiscountPercentBox);
         var percentDiscount = decimal.Round(subtotal * percent / 100m, 2, MidpointRounding.AwayFromZero);
-        var total = Math.Max(0, subtotal - percentDiscount - discount);
+        var total = Math.Max(0, subtotal + percentDiscount - discount);
         var paid = Num(PaidBox);
         FinalTotalText.Text = $"{total:N2} ج.م";
         TotalsText.Text = $"قبل الخصم: {subtotal:N2} | الخصم: {(percentDiscount + discount):N2} | المدفوع: {paid:N2} | المتبقي: {Math.Max(0, total - paid):N2} ج.م";

@@ -59,7 +59,7 @@ public sealed class RepresentativeDetailsView : UserControl
         tabs.Items.Add(new TabItem { Header = "الفواتير", Content = BuildInvoices() });
         tabs.Items.Add(new TabItem { Header = "التحصيلات والأقساط", Content = BuildCollections() });
         tabs.Items.Add(new TabItem { Header = "العمولات", Content = BuildCommissions() });
-        tabs.Items.Add(new TabItem { Header = "Commission report", Content = new CommissionReportView(service) });
+        tabs.Items.Add(new TabItem { Header = "تقرير العمولات", Content = new CommissionReportView(service) });
         tabs.Items.Add(new TabItem { Header = "مدفوعات العمولات", Content = BuildPayouts() });
         var commissionAccountTab = new TabItem { Header = "كشف الحساب", Content = BuildCommissionAccount() };
         tabs.Items.Add(commissionAccountTab);

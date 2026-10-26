@@ -26,6 +26,7 @@
             <Button x:Name="EditTraderButton" Content="تعديل تاجر" Click="EditTrader_Click" Visibility="Collapsed"/>
             <Button x:Name="DeleteTraderButton" Content="حذف / أرشفة تاجر" Click="DeleteTrader_Click" Visibility="Collapsed"/>
             <Button x:Name="PrimaryActionButton" Content="إجراء" Click="PrimaryAction_Click"/>
+            <Button x:Name="CustomerHistoryButton" Content="عرض سجل المعاملات" Click="CustomerHistory_Click" Visibility="Collapsed"/>
             <Button x:Name="SupplierStatementButton" Content="كشف حساب / سداد مورد" Click="SupplierStatement_Click" Visibility="Collapsed"/>
             <Button x:Name="SupplierListButton" Content="قائمة الموردين" Click="SupplierList_Click" Visibility="Collapsed"/>
             <Button x:Name="AddSupplierButton" Content="إضافة مورد" Click="AddSupplier_Click" Visibility="Collapsed"/>
